@@ -54,6 +54,9 @@ What TypeScript version does the app run? xstate v5 only requires ≥5.0, but Ta
 stated support window raises the effective floor to ≥5.4 (0070's A-3; 0060's A-2 is corrected
 to note the same). A version below 5.4 would need resolving before TanStack Query lands.
 
+2026-08-14 update — **resolved**: TypeScript 5.9.3 (facts/app-profile.md). The ≥5.4 floor
+for TanStack Query is satisfied; no blocker.
+
 ## f — bundle budget for the TanStack Query + boundary additions
 
 Is there a hard bundle-size budget, and does it tolerate the ~17 kB gz TanStack Query adds
@@ -78,6 +81,11 @@ architecture rests on, and `xstate/graph` needs ≥5.20.0.
 
 0070's A-2 positions `useOptimistic` as conditional on React 19; below it the idiom is moot
 and optimistic UI stays entirely in the Key question 5 rollback unit.
+
+2026-08-14 update — **resolved**: React 18.3.1 (facts/app-profile.md). React 19 is not in
+play: `useOptimistic` is moot and optimistic UI stays entirely in the rollback unit, as
+0070 anticipated. Also inherited by the 0090 React Compiler area: adoption below React 19
+additionally requires `react-compiler-runtime` and an explicit `target` config.
 
 ## j — mqtt.js session and QoS settings in production
 

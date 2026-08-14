@@ -160,6 +160,15 @@ stale to adopt outright — applied to the worst files *before* the global ratch
 on; otherwise the ratchet is either un-movable or gameable by polishing already-clean
 files. The strictness question also goes to the app owner as an intake item.
 
+> **2026-08-14 update (post-draft, pre-acceptance)**: the intake item resolved —
+> strictness is **very loose** (TS 5.9.3, facts/app-profile.md), so the decision rule's
+> second branch applies: the per-file allowlist convention comes first, the percentage
+> ratchet after. The user additionally widened the question — the codebase receives a
+> high volume of agent-authored code — and directed a dedicated track,
+> [0100-type-strictness](../0100-type-strictness/research-plan.md) (D-0021), which now
+> owns this design. This area's direct-adopt of type-coverage stands as an input to
+> 0100, not a finished wiring.
+
 **Rubric**
 
 **type-coverage 2.30.1** — License: strong — MIT. Maintenance health: adequate — release 8 days before access date and TS 6/7 tracking, but bus factor 1 (567 vs 4 commits among contributors). TypeScript fit: strong — built directly on the TS compiler API to count `any`-typed identifiers. Integration cost: strong — one devDependency, one npm script, `--at-least` flag is the CI gate. Output quality: strong — percentage + per-line detail, ignore-comment audit trail, unused-ignore detection. Escape hatch: strong — pure devDependency; removal touches only a CI step and inline comments.
@@ -169,6 +178,12 @@ files. The strictness question also goes to the app owner as an intake item.
 **betterer (5.4.0 stable / 6.0.0-alpha.1)** — License: strong — MIT. Maintenance health: weak — stable line frozen since 2022-08; v6 alpha stalled since 2024-12 with its GitHub milestone open since 2022 and 0 issues closed. TypeScript fit: adequate — ratchets raw `tsc` error counts, not an any-specific percentage; needs custom composition. Integration cost: weak — today's choice is an aging stable major or an unreleased alpha, both risky to build on now. Output quality: adequate — reliable "no worse than baseline" snapshot diffing, but no percentage metric. Escape hatch: adequate — results file is a sidecar artifact, but the guarantee depends on continued tool maintenance.
 
 ### 5. React Compiler adoption — future track
+
+> **2026-08-14 update (post-draft, pre-acceptance)**: the React-version fact landed —
+> **React 18.3.1** (facts/app-profile.md), not the assumed 19+. Adoption therefore
+> additionally requires `react-compiler-runtime` and an explicit `target: '18'` config
+> (the compiler supports 17+ via the runtime package). The proposed compiler track
+> inherits this as a settled input; the disposition (future track) is unchanged.
 
 #### What changed since 1.0.0
 
@@ -300,6 +315,10 @@ MQTT-over-WSS leg — wrong interception point (mqtt.js's Node transport bypasse
 global-`WebSocket` patch) and wrong abstraction level (MSW disclaims custom WebSocket
 protocols); the aedes-over-ws harness the 0060 spike proved keeps that role. Minting the
 proposed track numbers is the acceptance gate's call, not this report's.
+
+> **2026-08-14 update (post-draft, pre-acceptance)**: track number 0100 has since been
+> minted for the user-directed type-strictness track (D-0021), so if accepted, the
+> proposed React Compiler and end-to-end tracks would mint as **0110** and **0120**.
 
 **Lane policy, stated once** (the critic flagged an apparent tension): the program
 prefers oxlint-native rules or standalone CLIs first, and extends the existing

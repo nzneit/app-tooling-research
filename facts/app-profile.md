@@ -4,11 +4,13 @@ Facts about the application under study, supplied by the user (the app repo is n
 accessible from here — D-0004). Reports cite this file; a missing fact becomes a declared
 assumption in the report. Partial answers are fine.
 
-**Status**: unfilled
+**Status**: partially filled (2026-08-14: React, TypeScript, strictness)
 
 ## Stack
-- React version:
-- TypeScript version:
+- React version: 18.3.1 (2026-08-14, user — React 19 not in play)
+- TypeScript version: 5.9.3 (2026-08-14, user)
+- TypeScript strictness: very loose (2026-08-14, user — see track 0100 for the
+  enforcement design; the codebase receives a high volume of agent-authored code)
 - Node version:
 - Build tool (Vite / webpack / other):
 - Package manager:
