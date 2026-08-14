@@ -5,6 +5,7 @@
 import type { BoundaryError, TelemetryEvent } from "../errors/index.js";
 import {
   fromAjvErrors,
+  fromZodError,
   reasonCodeError,
   transportError,
   unroutableError,
@@ -34,6 +35,7 @@ import { WireOne } from "./emitter.js";
 import { compilePolicy, fillTopic, matchTopic, type CompiledRow } from "./policy.js";
 import { DeliveryPump } from "./pump.js";
 import { QuarantineRing } from "./quarantine.js";
+import { compileContract, matchEndpoint, pathOf, type CompiledEndpoint } from "./rest.js";
 import { TelemetryDeduper } from "./telemetry.js";
 
 interface WireEvent {
@@ -77,6 +79,7 @@ export function createTransportBoundary<const P extends PolicyTable>(
     throw new Error(`boundary: mqtt.url must be ws:// or wss:// (got "${config.mqtt.url}")`);
   const rows = compilePolicy(config.policy);
   const rowByChannel = new Map(rows.map((r) => [r.channel, r]));
+  const endpoints = compileContract(config.rest.contract);
 
   const bounds = config.mqtt.bounds ?? {};
   const reconnectCfg = config.mqtt.reconnect ?? {};
@@ -194,6 +197,20 @@ export function createTransportBoundary<const P extends PolicyTable>(
     inspect?.({ type: "quarantine", error });
     telemetry.record(error);
     markDirty();
+  }
+
+  /**
+   * Telemetry without quarantine, for errors that are not rejected *payloads*:
+   * class 1 (there is no payload) and class 3 (a contracted reason code is a
+   * valid body, not a reject). Returns the error so throw sites read as one
+   * expression. Symmetric with the MQTT leg, where connection-lost and
+   * reasonCode class-3 events are telemetry-only too.
+   */
+  function note<E extends BoundaryError>(error: E): E {
+    inspect?.({ type: "telemetry-only", error });
+    telemetry.record(error);
+    markDirty();
+    return error;
   }
 
   // ── Ingress pipeline (O1) ───────────────────────────────────────
@@ -477,14 +494,30 @@ export function createTransportBoundary<const P extends PolicyTable>(
     };
   }
 
-  // ── REST leg (seam surface; per-status zod validation is 0060 Task 6) ────
+  // ── REST leg (the single REST ingress) ──────────────────────────
+  //
+  // Pipeline, mirroring O1's MQTT order: transport -> content type -> decode ->
+  // DECLARED-status lookup -> per-status schema -> resolve or classify.
+  //
+  //   fetch throws                      -> class 1 (network | timeout | aborted)
+  //   content-type not JSON             -> class 4 unknown-content-type + quarantine
+  //   JSON body will not parse          -> class 4 undecodable          + quarantine
+  //   status not DECLARED for this path -> class 4 undeclared-status    + quarantine
+  //   declared body fails its schema    -> class 2 (fromZodError)       + quarantine
+  //   declared non-2xx body PARSES      -> class 3 ReasonCodeError (telemetry, thrown)
+  //   declared 2xx body PARSES          -> resolves Validated<TOk>      (I1)
 
   const fetcher: BoundaryFetcher = async <TOk>(
     req: Parameters<BoundaryFetcher>[0],
     opts?: { signal?: AbortSignal },
   ) => {
-    if (disposed)
-      throw transportError({ leg: "rest", endpointOrTopic: req.url, timestamp: now(), raw: null }, "disposed");
+    const path = pathOf(req.url);
+    const endpoint = matchEndpoint(endpoints, req.method, path);
+    /** Stable endpoint identity: the contract key when declared (so telemetry
+     *  dedupKeys do not fragment across path params), else METHOD + path. */
+    const at = endpoint?.key ?? `${req.method.toUpperCase()} ${path}`;
+
+    if (disposed) throw note(transportError(ctx(at, null, "rest"), "disposed"));
     const url = buildUrl(config.rest.baseUrl, req.url, req.params);
     const controller = new AbortController();
     let timedOut = false;
@@ -510,18 +543,26 @@ export function createTransportBoundary<const P extends PolicyTable>(
         signal: controller.signal,
       });
     } catch (err) {
-      throw transportError(
-        ctx(url, err, "rest"),
-        timedOut ? "timeout" : controller.signal.aborted ? "aborted" : "network",
+      throw note(
+        transportError(
+          ctx(at, err, "rest"),
+          timedOut ? "timeout" : controller.signal.aborted ? "aborted" : "network",
+        ),
       );
     } finally {
       if (timer !== undefined) clock.clearTimeout(timer);
       opts?.signal?.removeEventListener("abort", abort);
     }
 
+    // I11 — every content type defined, on this leg too. A non-JSON body is
+    // class 4 whether the status is 2xx or not: the status is irrelevant, the
+    // response was never decodable into something a schema could see.
     const contentType = res.headers.get("content-type") ?? "";
     if (!contentType.includes("json")) {
-      const err = unroutableError(ctx(url, contentType, "rest"), "unknown-content-type");
+      const err = unroutableError(
+        ctx(at, { status: res.status, contentType }, "rest"),
+        "unknown-content-type",
+      );
       reject(await res.text().catch(() => null), err);
       throw err;
     }
@@ -529,12 +570,37 @@ export function createTransportBoundary<const P extends PolicyTable>(
     try {
       body = await res.json();
     } catch (parseErr) {
-      const err = unroutableError(ctx(url, parseErr, "rest"), "undecodable");
+      const err = unroutableError(ctx(at, parseErr, "rest"), "undecodable");
       reject(null, err);
       throw err;
     }
-    if (!res.ok) throw reasonCodeError(ctx(url, body, "rest"), res.status, body);
-    return body as Validated<TOk>;
+
+    // DECLARED vs UNDECLARED. No declared schema for this (endpoint, status)
+    // means nothing can be validated, so nothing may cross (I1) — class 4,
+    // regardless of whether the status was a success one.
+    const schema = endpoint?.statuses[res.status];
+    if (schema === undefined) {
+      const err = unroutableError(
+        ctx(at, { status: res.status, declared: declaredStatuses(endpoint) }, "rest"),
+        "undeclared-status",
+      );
+      reject(body, err);
+      throw err;
+    }
+
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      const err = fromZodError(parsed.error, ctx(at, parsed.error, "rest"));
+      reject(body, err);
+      throw err;
+    }
+
+    // A declared non-2xx body that PARSED: class 3, thrown so TanStack Query
+    // treats it as an error and the taxonomy-aware predicate never retries it.
+    // Telemetry only — a contracted reason code is not a rejected payload, so
+    // it does not enter the quarantine ring (symmetric with the MQTT leg, I2).
+    if (!res.ok) throw note(reasonCodeError(ctx(at, body, "rest"), res.status, parsed.data));
+    return parsed.data as Validated<TOk>;
   };
 
   // ── Handle ──────────────────────────────────────────────────────
@@ -596,6 +662,11 @@ export function createTransportBoundary<const P extends PolicyTable>(
 }
 
 function noop(): void {}
+
+/** Evidence for a class-4 `undeclared-status`: what the contract DID declare. */
+function declaredStatuses(endpoint: CompiledEndpoint | null): readonly number[] {
+  return endpoint === null ? [] : Object.keys(endpoint.statuses).map(Number).sort((a, b) => a - b);
+}
 
 function buildUrl(baseUrl: string, url: string, params?: Record<string, unknown>): string {
   const base = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;

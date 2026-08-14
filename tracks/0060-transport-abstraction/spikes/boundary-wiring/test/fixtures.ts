@@ -3,6 +3,7 @@
 
 import Ajv from "ajv";
 import type { CompiledValidator } from "../src/index.js";
+import { plantsContract } from "../app/contract.js";
 
 export const ajv = new Ajv.default({ allErrors: true, strict: false });
 
@@ -64,4 +65,16 @@ export const policy = {
   },
 } as const;
 
-export const rest = { baseUrl: "https://api.example" } as const;
+/**
+ * The REST half of the fixture set. `contract` is the app's declared-status
+ * table (app/contract.ts), built from orval's generated per-status zod schemas
+ * — so the declared/undeclared split under test is driven by generated
+ * artifacts, not by hand-written stand-ins.
+ */
+export const rest = { baseUrl: "https://api.example", contract: plantsContract } as const;
+
+/** A body that satisfies the generated `ListPlants200Response` schema. */
+export const validPlantList = {
+  plants: [{ id: "p1", name: "Plant One", tempC: 21.5 }],
+  total: 1,
+} as const;

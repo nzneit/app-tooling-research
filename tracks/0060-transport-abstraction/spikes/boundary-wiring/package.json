@@ -4,18 +4,23 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate": "orval --config orval.config.ts"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
     "@types/ws": "8.18.1",
     "aedes": "1.1.1",
     "ajv": "8.20.0",
+    "orval": "8.24.0",
+    "oxlint": "1.78.0",
     "typescript": "7.0.2",
     "vitest": "4.1.10",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "zod": "4.4.3"
   },
   "dependencies": {
+    "@tanstack/react-query": "5.101.4",
     "mqtt": "5.15.2",
     "mqtt-pattern": "2.1.1",
     "xstate": "5.32.5"

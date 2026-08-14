@@ -1,0 +1,54 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // THE CAVEAT REPRODUCTION — do not copy this config.
+  //
+  // Identical to .oxlintrc.json except that the ingress override does NOT
+  // restate the base `patterns` block. The author's intent is "grant `mqtt`
+  // here and add one ingress-specific ban"; what actually happens in oxlint
+  // 1.78.0 is that the override REPLACES the base options wholesale, so the
+  // generated-client ban silently stops applying inside `**/ingress/**`.
+  //
+  // Kept as a committed fixture so the false negative is asserted, not
+  // remembered. See test/check-13-layering-lint.test.ts and findings.md.
+  "categories": {},
+
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "mqtt",
+            "message": "I5 (one ingress per protocol): only the transport boundary's MQTT ingress may import mqtt; everything else goes through the boundary handle."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["**/api/generated/*"],
+            "message": "I5: the orval-generated client is reached only through the caller-owned mutator (app/api/mutator.ts)."
+          }
+        ]
+      }
+    ]
+  },
+
+  "overrides": [
+    {
+      "files": ["**/ingress/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/features/*"],
+                "message": "Layering: the ingress sits below feature code and must not import it."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

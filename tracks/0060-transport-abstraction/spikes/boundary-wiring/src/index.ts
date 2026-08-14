@@ -29,6 +29,8 @@ export type {
   PayloadOf,
   PolicyTable,
   QuarantineEntry,
+  ResponseSchema,
+  RestContract,
   TelemetryEmission,
   TopicParams,
   TransportBoundary,

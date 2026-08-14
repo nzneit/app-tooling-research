@@ -73,10 +73,18 @@ export function fromAjvErrors(
   };
 }
 
-/** The subset of a `ZodError` this normalizer reads (structural — no zod import). */
+/**
+ * The subset of a `ZodError` this normalizer reads (structural — no zod import).
+ *
+ * `path` is widened to `PropertyKey[]` because that is zod v4's actual issue
+ * path type (`readonly path: PropertyKey[]` in zod/v4/core/errors.d.cts); a
+ * narrower `(string | number)[]` would make a real `ZodError` structurally
+ * unassignable here. Segments are stringified on the way into the one issue
+ * shape.
+ */
 export interface ZodErrorLike {
   readonly issues: readonly {
-    readonly path: readonly (string | number)[];
+    readonly path: readonly PropertyKey[];
     readonly message: string;
     readonly code?: string;
   }[];
@@ -89,12 +97,13 @@ export interface ZodErrorLike {
  */
 export function fromZodError(error: ZodErrorLike, ctx: ErrorContext): ContractViolation {
   const issues = error.issues ?? [];
+  const join = (path: readonly PropertyKey[]): string => path.map((p) => String(p)).join("/");
   const firstPath = issues[0]?.path ?? [];
   return {
     class: 2,
-    schemaPath: firstPath.length > 0 ? `#/${firstPath.join("/")}` : "#",
+    schemaPath: firstPath.length > 0 ? `#/${join(firstPath)}` : "#",
     issues: issues.map((i) => ({
-      path: i.path.length > 0 ? `/${i.path.join("/")}` : "/",
+      path: i.path.length > 0 ? `/${join(i.path)}` : "/",
       message: i.message,
     })),
     ...ctx,

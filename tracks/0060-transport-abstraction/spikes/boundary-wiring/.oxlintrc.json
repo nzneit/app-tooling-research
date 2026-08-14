@@ -1,0 +1,66 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+
+  // Layering lint for the transport boundary (D-0002: no new lint toolchain —
+  // oxlint `no-restricted-imports` only). Enforces I5, "exactly one ingress per
+  // protocol": `mqtt` may be imported by the MQTT ingress and nowhere else, and
+  // the orval-generated client may be reached only through the caller-owned
+  // mutator.
+  //
+  // `categories: {}` keeps every other rule off: this config exists to test one
+  // layering rule, not to lint the spike.
+  "categories": {},
+
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "mqtt",
+            "message": "I5 (one ingress per protocol): only the transport boundary's MQTT ingress may import mqtt; everything else goes through the boundary handle."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["**/api/generated/*"],
+            "message": "I5: the orval-generated client is reached only through the caller-owned mutator (app/api/mutator.ts)."
+          }
+        ]
+      }
+    ]
+  },
+
+  "overrides": [
+    {
+      // The MQTT ingress: `mqtt` is granted here, and only here.
+      //
+      // ── CAVEAT, confirmed in oxlint 1.78.0 (test/check-13-layering-lint.test.ts) ──
+      // An `overrides[].rules` entry REPLACES the base entry's options; it does
+      // NOT merge with them. So the `patterns` block below is a VERBATIM
+      // restatement of the base `patterns` block. Delete it and the
+      // generated-client ban silently stops applying inside this directory —
+      // a false negative in the one place it matters most. Any future addition
+      // to the base `patterns` must be copied here too; the test asserts both
+      // halves so the copy cannot silently drift.
+      "files": ["**/ingress/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/api/generated/*"],
+                "message": "I5: the orval-generated client is reached only through the caller-owned mutator (app/api/mutator.ts)."
+              },
+              {
+                "group": ["**/features/*"],
+                "message": "Layering: the ingress sits below feature code and must not import it."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

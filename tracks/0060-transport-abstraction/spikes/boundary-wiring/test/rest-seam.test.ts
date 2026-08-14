@@ -1,8 +1,8 @@
-// The REST leg's seam surface only — enough for Task 6 to attach orval's
-// mutator, the per-status zod schemas and the QueryCache telemetry tap to.
-// Per-status zod validation and the declared-status table are Task 6's work;
-// what is asserted here is that `fetcher` threads AbortSignal, rejects only
-// BoundaryError, and never resolves anything it did not decode.
+// The REST leg's seam behaviour: `fetcher` threads AbortSignal, rejects only
+// BoundaryError, and never resolves anything it did not decode AND validate.
+//
+// The declared/undeclared split itself (class 3 vs class 4 vs class 2) lives in
+// check-10; what this file pins is the seam contract around it.
 
 import { describe, expect, it } from "vitest";
 import { createTransportBoundary } from "../src/index.js";
@@ -10,11 +10,10 @@ import {
   isBoundaryError,
   isReasonCode,
   isTransient,
-  isUnroutable,
   retryOnlyTransient,
 } from "../src/errors/index.js";
 import { memoryBrokerAdapter, scriptedFetchAdapter } from "../src/testing.js";
-import { policy, rest } from "./fixtures.js";
+import { policy, rest, validPlantList } from "./fixtures.js";
 
 function harness(routes: Parameters<typeof scriptedFetchAdapter>[0]) {
   return createTransportBoundary(
@@ -23,25 +22,18 @@ function harness(routes: Parameters<typeof scriptedFetchAdapter>[0]) {
   );
 }
 
-describe("REST seam (surface for Task 6)", () => {
-  // NB: nothing validates here yet — the per-status zod schemas are Task 6's.
-  // What this asserts is the branding passthrough: a decoded 2xx JSON body
-  // resolves through the fetcher unchanged and typed as Validated<T>.
-  it("passes a decoded 2xx JSON body through as Validated<T> (no schema yet)", async () => {
+describe("REST seam", () => {
+  // A declared 200 whose body parses against its generated per-status schema
+  // resolves, branded (I1). Nothing that did not parse ever gets here.
+  it("resolves a declared 2xx body that parses, as Validated<T>", async () => {
     const b = harness([
-      { method: "GET", url: "/v1/plants", status: 200, body: { plants: ["p1"] } },
+      { method: "GET", url: "/v1/plants", status: 200, body: validPlantList },
     ]);
-    await expect(b.fetcher({ url: "/v1/plants", method: "GET" })).resolves.toEqual({
-      plants: ["p1"],
-    });
+    await expect(b.fetcher({ url: "/v1/plants", method: "GET" })).resolves.toEqual(validPlantList);
     await b.dispose();
   });
 
-  // Seam-level only: EVERY non-2xx JSON body currently becomes class 3.
-  // design.md reserves class 3 for a DECLARED status whose body parses against
-  // its per-status schema, and routes an UNDECLARED status to class 4
-  // 'undeclared-status'. Building that split is Task 6's obligation.
-  it("rejects a non-2xx JSON body as class 3, carrying the status", async () => {
+  it("rejects a DECLARED non-2xx body that parses as class 3, carrying the status", async () => {
     const b = harness([
       { method: "GET", url: "/v1/plants", status: 409, body: { code: "E_CONFLICT" } },
     ]);
@@ -52,25 +44,8 @@ describe("REST seam (surface for Task 6)", () => {
     await b.dispose();
   });
 
-  it("rejects an unknown content type as class 4, never a silent skip (I11)", async () => {
-    const b = harness([
-      { method: "GET", url: "/v1/plants", status: 200, body: "<html/>", contentType: "text/html" },
-    ]);
-    const err = await b.fetcher({ url: "/v1/plants", method: "GET" }).catch((e: unknown) => e);
-    expect(isUnroutable(err)).toBe(true);
-    expect(err).toMatchObject({ class: 4, cause: "unknown-content-type", leg: "rest" });
-    expect(b.quarantine.entries()).toHaveLength(1);
-    await b.dispose();
-  });
-
-  it("rejects an undecodable JSON body as class 4", async () => {
-    const b = harness([
-      { method: "GET", url: "/v1/plants", status: 200, body: "{oops", contentType: "application/json" },
-    ]);
-    const err = await b.fetcher({ url: "/v1/plants", method: "GET" }).catch((e: unknown) => e);
-    expect(err).toMatchObject({ class: 4, cause: "undecodable", leg: "rest" });
-    await b.dispose();
-  });
+  // Non-JSON and undecodable bodies: the full matrix, 2xx AND non-2xx, is
+  // check-11 (the ts-rest #789 lesson on this leg).
 
   it("threads AbortSignal into the adapter, so cancellation is real", async () => {
     const b = harness([

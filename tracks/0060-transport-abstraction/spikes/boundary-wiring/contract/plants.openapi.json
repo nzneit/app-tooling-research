@@ -1,0 +1,171 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Synthetic plants contract (0060 spike)",
+    "version": "1.0.0",
+    "description": "Deliberately small stand-in for 0010's real contract. Three operations, reason-code JSON error bodies with DIFFERENT per-status schemas (409 vs 422) so per-status validation is observable, and NO 418 anywhere - 418 is the undeclared status the class-4 'undeclared-status' branch is tested with."
+  },
+  "servers": [{ "url": "https://api.example" }],
+  "paths": {
+    "/v1/plants": {
+      "get": {
+        "operationId": "listPlants",
+        "summary": "List plants",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PlantList" } }
+            }
+          },
+          "409": {
+            "description": "conflict (declared reason code)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Conflict" } }
+            }
+          },
+          "422": {
+            "description": "unprocessable (declared reason code, DIFFERENT shape from 409)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ValidationProblem" } }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plants/{plantId}": {
+      "get": {
+        "operationId": "getPlant",
+        "summary": "Read one plant",
+        "parameters": [
+          {
+            "name": "plantId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Plant" } }
+            }
+          },
+          "409": {
+            "description": "conflict (declared reason code)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Conflict" } }
+            }
+          },
+          "422": {
+            "description": "unprocessable (declared reason code)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ValidationProblem" } }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plants/{plantId}/commands": {
+      "post": {
+        "operationId": "sendPlantCommand",
+        "summary": "Send a command to a plant",
+        "parameters": [
+          {
+            "name": "plantId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/PlantCommand" } }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "accepted",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CommandAccepted" } }
+            }
+          },
+          "409": {
+            "description": "conflict (declared reason code)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Conflict" } }
+            }
+          },
+          "422": {
+            "description": "unprocessable (declared reason code)",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ValidationProblem" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Plant": {
+        "type": "object",
+        "required": ["id", "name", "tempC"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "tempC": { "type": "number" }
+        }
+      },
+      "PlantList": {
+        "type": "object",
+        "required": ["plants", "total"],
+        "properties": {
+          "plants": { "type": "array", "items": { "$ref": "#/components/schemas/Plant" } },
+          "total": { "type": "integer" }
+        }
+      },
+      "PlantCommand": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["start", "stop"] }
+        }
+      },
+      "CommandAccepted": {
+        "type": "object",
+        "required": ["accepted", "commandId"],
+        "properties": {
+          "accepted": { "type": "boolean" },
+          "commandId": { "type": "string" }
+        }
+      },
+      "Conflict": {
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      },
+      "ValidationProblem": {
+        "type": "object",
+        "required": ["code", "fields"],
+        "properties": {
+          "code": { "type": "string" },
+          "fields": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
