@@ -1,32 +1,25 @@
 // ENTRY POINT 1 — createStateKit. See design.md "Chosen interface" +
 // invariants 1-11. Spike code; findings.md is the durable artifact.
 
+import { createOptimisticMutation, type OptimisticDeps } from "./optimistic.ts";
+import { useOptimisticMutationImpl } from "./react.ts";
 import { compileMatcher } from "./topic.ts";
 import type {
   FeedEvent,
   IngressError,
   IngressInspectionEvent,
+  OptimisticMutation,
+  OptimisticMutationOptions,
   StateKit,
   StateKitConfig,
   StreamDecl,
+  UseMutationResult,
   ValidatedMessage,
   Wire,
 } from "./types.ts";
 
 export class IngressConfigError extends Error {
   override readonly name = "IngressConfigError";
-}
-
-/**
- * SPIKE-ONLY internal seam — NOT part of design.md's Chosen interface.
- * design.md registers pending-write mask holds from `kit.optimisticMutation`,
- * which lands in Task 9. Until then the mask stage of the pipeline would be
- * unreachable (and therefore untestable) from the public surface, so the spike
- * exposes the registration under a `__` name. Recorded in findings.md.
- */
-export interface SpikeInternals {
-  /** Registers a pending-write hold for (stream, entity). Returns the release. */
-  __maskHold(stream: string, entity: string): () => void;
 }
 
 const SEP = "\u0000";
@@ -40,8 +33,10 @@ interface StreamEntry {
 
 /** A guard decision: dropped, or passed with a deferred commit (invariant 6 —
  *  a masked message must NOT advance the high-water mark, or its later release
- *  would adjudicate as stale against itself). */
-type GuardDecision = { ok: false } | { ok: true; commit: () => void };
+ *  would adjudicate as stale against itself). `stamped` records whether the
+ *  message was adjudicated by a stamp: invariant 5 honours `dispatch.write`
+ *  ONLY for stamp-guarded messages. */
+type GuardDecision = { ok: false } | { ok: true; stamped: boolean; commit: () => void };
 
 interface Withheld {
   readonly msg: ValidatedMessage;
@@ -69,7 +64,7 @@ function devWarn(error: IngressError): void {
   console.warn(`[state-kit] ${error.code} (${where})`, error.cause ?? error);
 }
 
-export function createStateKit(config: StateKitConfig): StateKit & SpikeInternals {
+export function createStateKit(config: StateKitConfig): StateKit {
   const streams = config.streams ?? {};
   const streamIds = Object.keys(streams);
 
@@ -83,14 +78,15 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       if (config.queryClient === undefined) {
         throw new IngressConfigError(`stream '${id}' has a query target but no queryClient`);
       }
-      if (decl.dispatch.write !== undefined) {
-        // design.md honours `write` only for stamp-guarded, cancelQueries-preceded
-        // messages. This spike implements invalidate-don't-set only (Task 9 owns
-        // the stamped fast path), so a supplied `write` would be silently
-        // ignored — refuse it at the composition root instead.
+      if (decl.dispatch.write !== undefined && decl.stamp === undefined) {
+        // Invariant 5: `write` fires ONLY for stamp-guarded messages. A stream
+        // with no `stamp` selector can never produce one, so the member would
+        // be dead config — refuse it at the composition root rather than let a
+        // caller believe push is writing the cache when it is only invalidating.
         throw new IngressConfigError(
-          `stream '${id}' declares dispatch.write, which this spike does not implement ` +
-            `(invalidate-don't-set only; the stamped write path lands with Task 9)`,
+          `stream '${id}' declares dispatch.write without a stamp selector: ` +
+            `invariant 5 honours write only for stamp-guarded messages ` +
+            `(unstamped streams are invalidate-don't-set)`,
         );
       }
     }
@@ -182,7 +178,7 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       const key = entry.id + SEP + entity;
       const high = stampHighWater.get(key);
       if (high !== undefined && !(stamp > high)) return { ok: false };
-      return { ok: true, commit: () => stampHighWater.set(key, stamp) };
+      return { ok: true, stamped: true, commit: () => stampHighWater.set(key, stamp) };
     }
 
     // Unstamped (A-1): epoch rules only.
@@ -199,6 +195,7 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       if (seenEpoch !== undefined && seenEpoch > epoch) return { ok: false };
       return {
         ok: true,
+        stamped: false,
         commit: () => {
           entityTopic.set(entityKey, msg.topic);
           epochOf.set(key, epoch);
@@ -209,10 +206,15 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     const key = entry.id + SEP + entity;
     const seenEpoch = epochOf.get(key);
     if (seenEpoch !== undefined && seenEpoch > epoch) return { ok: false };
-    return { ok: true, commit: () => epochOf.set(key, epoch) };
+    return { ok: true, stamped: false, commit: () => epochOf.set(key, epoch) };
   }
 
-  function dispatch(entry: StreamEntry, msg: ValidatedMessage, entity: string): void {
+  function dispatch(
+    entry: StreamEntry,
+    msg: ValidatedMessage,
+    entity: string,
+    stamped: boolean,
+  ): void {
     const target = entry.decl.dispatch;
     try {
       if ("machine" in target) {
@@ -222,8 +224,22 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       } else {
         const queryKey = target.query(msg);
         entry.seenQueryKeys.set(JSON.stringify(queryKey), queryKey);
-        // Invariant 5: unstamped query targets only ever invalidate.
-        config.queryClient!.invalidateQueries({ queryKey });
+        const queryClient = config.queryClient!;
+        if (target.write !== undefined && stamped) {
+          // Invariant 5's stamped fast path: cancelQueries FIRST, then write.
+          // cancelQueries returns a promise, but the cancellation of in-flight
+          // fetches it performs is synchronous, so the write below cannot be
+          // overwritten by a request that was in flight when it ran; awaiting
+          // it would break invariant 1's one-JS-turn pipeline. Recorded in
+          // findings.md.
+          void queryClient
+            .cancelQueries({ queryKey })
+            .catch((cause: unknown) => onError(makeIngressError("dispatch-failed", msg, cause)));
+          queryClient.setQueryData(queryKey, target.write(msg));
+        } else {
+          // Invariant 5: unstamped query targets only ever invalidate.
+          void queryClient.invalidateQueries({ queryKey });
+        }
       }
     } catch (cause) {
       onError(makeIngressError("dispatch-failed", msg, cause));
@@ -266,7 +282,7 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     emit(() => ({ stage: "mask", stream: entry.id, entity, verdict: "pass", message: msg }));
 
     decision.commit();
-    dispatch(entry, msg, entity);
+    dispatch(entry, msg, entity, decision.stamped);
   }
 
   function pipeline(msg: ValidatedMessage): void {
@@ -301,10 +317,10 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
           target.machine.send({ type: "ingress.gap" });
         } else if ("query" in target) {
           if (target.family !== undefined) {
-            config.queryClient!.invalidateQueries({ queryKey: target.family });
+            void config.queryClient!.invalidateQueries({ queryKey: target.family });
           } else {
             for (const queryKey of entry.seenQueryKeys.values()) {
-              config.queryClient!.invalidateQueries({ queryKey });
+              void config.queryClient!.invalidateQueries({ queryKey });
             }
           }
         }
@@ -317,7 +333,8 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
   }
 
   // ── Mask registry (invariant 6). Holds are registered by the kit-bound
-  //    optimistic unit, which lands in Task 9; the stage is live now. ──
+  //    optimistic unit below — that binding is design.md's decisive
+  //    structural idea: no caller ever wires "a write is pending". ──
   function hold(stream: string, entity: string): () => void {
     const key = stream + SEP + entity;
     maskHolds.set(key, (maskHolds.get(key) ?? 0) + 1);
@@ -420,12 +437,29 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     }
   }
 
+  // ── The kit-bound optimistic unit (design.md ENTRY POINT 1) ─────────
+  const optimisticDeps: OptimisticDeps = {
+    queryClient: config.queryClient,
+    kitSignal: controller.signal,
+    hold,
+    inFlight: new Map<string, number>(),
+  };
+
   return {
     signal: controller.signal,
     get stats() {
       return { ...counters };
     },
+    optimisticMutation<TData, TVars>(
+      opts: OptimisticMutationOptions<TData, TVars>,
+    ): OptimisticMutation<TData, TVars> {
+      return createOptimisticMutation(optimisticDeps, opts);
+    },
+    useOptimisticMutation<TData, TVars>(
+      opts: OptimisticMutationOptions<TData, TVars>,
+    ): UseMutationResult<TData, unknown, TVars> {
+      return useOptimisticMutationImpl(optimisticDeps, opts);
+    },
     dispose,
-    __maskHold: hold,
   };
 }

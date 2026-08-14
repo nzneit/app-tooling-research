@@ -5,6 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
+import { QueryClient } from "@tanstack/react-query";
 import { createActor, createMachine } from "xstate";
 import {
   createRaceHarness,
@@ -36,6 +37,11 @@ function reading(packetId: string, topic: string, rigId: string, value: number) 
 /** Drives the harness with a fixed, feasible ordering — no fc search. */
 function pinned(ordering: number[]) {
   return createRaceHarness(fc.schedulerFor(ordering));
+}
+
+/** Enough microtask turns for the optimistic bundle's awaited steps to land. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
 describe("ingress pipeline invariants", () => {
@@ -142,10 +148,14 @@ describe("ingress pipeline invariants", () => {
   });
 
   it("withholds the latest masked item and releases it through guard -> dispatch (invariant 6)", async () => {
+    // The hold is registered by a REAL kit-bound optimistic mutation declaring
+    // `mask` — design.md's kit-binding, not a test seam. (Task 8's temporary
+    // `__maskHold` internal is deleted.)
     const dispatched: number[] = [];
     const harness = pinned([1, 2]);
     const kit = createStateKit({
       feed: harness.feed,
+      queryClient: new QueryClient(),
       streams: {
         rig: {
           topic: "rig/+/reading",
@@ -156,7 +166,17 @@ describe("ingress pipeline invariants", () => {
       },
     });
 
-    const release = kit.__maskHold("rig", "1");
+    let confirm!: (value: { ok: true }) => void;
+    const mutation = kit.optimisticMutation<{ ok: true }, { rigId: string }>({
+      mutationFn: () => new Promise<{ ok: true }>((resolve) => (confirm = resolve)),
+      queryKey: (vars) => ["rig", vars.rigId],
+      optimistic: () => ({ pending: true }),
+      mask: (vars) => ({ stream: "rig", entity: vars.rigId }),
+    });
+
+    const settled = mutation.mutate({ rigId: "1" });
+    await flushMicrotasks(); // let the bundle reach step (4), the mask hold
+
     harness.push(
       reading("p1", "rig/1/reading", "1", 10),
       reading("p2", "rig/1/reading", "1", 20),
@@ -167,7 +187,9 @@ describe("ingress pipeline invariants", () => {
     expect(kit.stats.masked).toBe(2);
     expect(kit.stats.dispatched).toBe(0);
 
-    release();
+    confirm({ ok: true });
+    await settled; // settle releases the hold
+
     // Withhold-LATEST, not drop: only the newest item is released.
     expect(dispatched).toStrictEqual([20]);
     expect(kit.stats.dispatched).toBe(1);
@@ -294,7 +316,7 @@ describe("ingress pipeline invariants", () => {
 // ── Review-round hardening (task-8 review findings 1, 3, 4, 6, 8, 9, 10) ──
 
 describe("ingress hardening", () => {
-  it("refuses a query target that declares `write`, at the composition root", () => {
+  it("refuses `dispatch.write` on an unstamped stream, at the composition root (invariant 5)", () => {
     const harness = pinned([]);
     const withWrite: StreamDecl<Reading> = {
       topic: "rig/+/reading",
@@ -304,22 +326,34 @@ describe("ingress hardening", () => {
         write: (m) => () => m.payload.value,
       },
     };
+    // No `stamp` selector: `write` could never fire (invariant 5 honours it only
+    // for stamp-guarded messages), so dead config fails at construction.
     expect(() =>
       createStateKit({
         feed: harness.feed,
         streams: { rig: withWrite },
-        queryClient: { invalidateQueries: () => {} },
+        queryClient: new QueryClient(),
       }),
     ).toThrow(/dispatch\.write/);
 
-    // …and the same declaration WITHOUT `write` constructs fine.
+    // …the same declaration WITH a stamp selector constructs fine (the stamped
+    // fast path is live — see test/bridge.test.ts),
+    expect(() =>
+      createStateKit({
+        feed: pinned([]).feed,
+        streams: { rig: { ...withWrite, stamp: (m) => m.payload.value } },
+        queryClient: new QueryClient(),
+      }),
+    ).not.toThrow();
+
+    // …and so does the same stream WITHOUT `write` (invalidate-don't-set).
     expect(() =>
       createStateKit({
         feed: pinned([]).feed,
         streams: {
           rig: { ...withWrite, dispatch: { query: (m) => ["rig", m.payload.rigId] } },
         },
-        queryClient: { invalidateQueries: () => {} },
+        queryClient: new QueryClient(),
       }),
     ).not.toThrow();
   });

@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {},
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["**/transport/*"],
+            "message": "single-writer (design.md invariant 2 / D-0002): only the composition root may import the transport feed; everything else receives messages through the state kit's single dispatch."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["**/stores/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@tanstack/react-query",
+                "message": "no-store-copy (design.md invariant 5): entity ownership is partitioned — a store module must not read the QueryCache."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/query/*"],
+                "message": "no-store-copy (design.md invariant 5): a store module must not import the query layer."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/composition-root.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}
