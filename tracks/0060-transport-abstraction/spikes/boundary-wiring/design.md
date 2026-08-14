@@ -576,3 +576,14 @@ expect(b.actor.getSnapshot().connection).toBe('degraded');
 - **flexible's `PublishOutcome` values**: outcomes-as-values add a second error vocabulary beside the taxonomy. One vocabulary (`publish` rejects `BoundaryError`; guards narrow it) keeps the interface smaller and gating remains fully observable via wire 2 and telemetry.
 - **the raw-`ActorRef` escape hatch** (minimal, common-caller): the module either owns its interface or it doesn't. The `inspect` config hook already provides the dev-plane visibility the escape hatch mostly existed for.
 - **Hypothetical seams, unanimously refused by all four candidates and by this design**: validator port (Ajv/zod are fixed by 0010), quarantine-store port (the IndexedDB escalation would be the second adapter — introduce the port then, not before), telemetry port (the wildcard tap already is the surface), topic-matcher and emitter ports (pure in-process, subsumed). One adapter means a hypothetical seam; two adapters means a real one — this design ships exactly three real seams, each with both adapters named.
+
+---
+
+> **Gate ratification (2026-08-14, D-0018):** `rest.contract` (the declared-status table this
+> spike introduced) is ratified into the `rest` config with a **passthrough + drift-warning**
+> unknown-field policy — orval's strip default must be configured or post-processed away at
+> build time, and undocumented response fields raise a deduped warning naming endpoint and
+> fields. Aborted requests raise **no telemetry envelope**: cancellation is an outcome, not a
+> taxonomy event (supersedes this spike's per-abort class-1 emission; a boundary stats counter
+> carries visibility). Ordering-stamp requirement recorded as D-0019; oxlint override
+> restatement is the standing rule per D-0020.

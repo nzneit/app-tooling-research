@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** Wave 3 spikes complete (0060 boundary-wiring, 0070 ingress-and-test-lane) — next: user review of findings and any D-#### amendments.
+> **Frontier:** Wave 3 accepted (D-0018–D-0020) — next: raise the ordering-stamp requirement (D-0019) with contract owners, or schedule the 0090 horizon scan.
 
 ## How it works
 

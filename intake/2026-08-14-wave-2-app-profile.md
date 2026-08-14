@@ -18,6 +18,14 @@ decide stale-REST-vs-fresher-MQTT by construction, and the interim rule is
 invalidate-don't-set with extra round-trips. 0070 raises this as a formal contract
 requirement flowing up to 0010 and 0060.
 
+2026-08-14 update — elevated to formal requirement **D-0019**, now with measured evidence
+from the 0070 spike (tests: ingress-race both arms, replay-and-pinning, bridge
+stamped-fast-path): unstamped, the client cannot even observe the lost race; stamped, the
+guard rejects the stale write in every explored interleaving. Flexibility for partial
+contract control: adoption is per-stream opt-in (one `stamp` selector), any existing
+monotonic field on both legs qualifies as the stamp, and uncontrolled contracts stay on
+invalidate-don't-set indefinitely.
+
 ## b — MQTT reconnect frequency and offline-queue expectations
 
 Is reconnection an occasional network blip or a persistently flapping connection, and does

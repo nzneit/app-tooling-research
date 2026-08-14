@@ -130,3 +130,24 @@ D-0001 · D-0002 · D-0003 · D-0004 · D-0005 · D-0006 · D-0007 · D-0011
 **Why**: User directive (2026-08-14): attempt 0060/0070 spikes, keep each spike's work isolated, and establish a reusable R&D harness for future track spikes.
 **From**: docs/superpowers/specs/2026-08-14-spike-harness-design.md
 **Affects**: repo structure, process, 0060, 0070, and every future spike
+
+### D-0018: Accept Wave 3 spike findings; ratify boundary contracts
+**Date**: 2026-08-14
+**What**: Both Wave 3 spikes accepted as complete with every in-scope check go (0060 boundary-wiring: 99 tests incl. the real-broker MQTT leg and orval REST leg; 0070 ingress-and-test-lane: 60 tests incl. the fc.scheduler race lane); the two findings.md files are the durable record. Ratified into the 0060 design: `rest.contract` (the declared-status table) with a **passthrough + drift-warning** unknown-field policy — undocumented response fields survive to callers and raise a deduped warning naming the endpoint and fields, so action can be taken case by case in code; this deviates from orval's strip default, so the build must configure or post-process the generated zod schemas (not exercised by the spike), and `Validated<T>` consequently means "at least the declared shape". Ratified the abort-normalization contract: an aborted request stays class-1 `reason: 'aborted'` inside the boundary (retry-excluded) and the state layer maps that shape — with raw `AbortError` and TanStack's `CancelledError` — to `{outcome: 'cancelled'}` with normal rollback; aborts raise **no telemetry envelope** (supersedes the spike's per-abort emission; visibility via a boundary stats counter). Also ratified: the signal-threading go conditions (mutator reads `req.signal`; orval `httpClient: 'axios'` convention), 0070's additive exports (`isCancellation`, `OptimisticConfigError`), and mqtt-pattern as adopt with the ~100-line vendor path reserved.
+**Why**: Every high-stakes findings claim survived adversarial review and live verification; the two ratifications were the findings' explicitly queued choices (user call at the Wave 3 gate).
+**From**: tracks/0060-transport-abstraction/spikes/boundary-wiring/findings.md, tracks/0070-state-concurrency/spikes/ingress-and-test-lane/findings.md
+**Affects**: 0060, 0070, 0050, 0010
+
+### D-0019: Server-issued ordering stamp — contract requirement with graceful fallback
+**Date**: 2026-08-14
+**What**: The program formally requests a server-issued monotonic ordering stamp (per-entity version or per-topic sequence) in the vendored contracts — raised to the app owner and 0010 via intake item a. Measured basis (0070 spike): without a stamp the client cannot even observe a lost REST-vs-MQTT race (`stats.stale === 0`, final version 1 of 3); with one, the same guard rejects the stale write in every interleaving fc explores and the invalidate round trip disappears (tests: ingress-race both arms, replay-and-pinning, bridge stamped-fast-path). The requirement is deliberately flexible: adoption is per-stream opt-in (one `stamp` selector plus an optional `write`, no interface reshaping); any existing monotonic field present on both legs may serve as the stamp — no new field is needed where one already exists; contracts we do not control stay partitioned or on invalidate-don't-set indefinitely, which remains the sanctioned safe bridge (D-0016).
+**Why**: Stale-vs-fresh arbitration is provably undecidable client-side without a stamp, and per-stream opt-in means partial contract control cannot block incremental adoption.
+**From**: tracks/0070-state-concurrency/spikes/ingress-and-test-lane/findings.md (user call at the Wave 3 gate)
+**Affects**: 0010, 0060, 0070, contract owners
+
+### D-0020: oxlint override-restatement standing rule
+**Date**: 2026-08-14
+**What**: Repo-wide standing rule for oxlint configs: every `overrides` entry touching `no-restricted-imports` restates the base ban patterns verbatim inside the override, and each config carries a drift test asserting the restatement. Basis: on oxlint 1.78.0, `overrides` REPLACE base rule options rather than merging, so an allowance override silently drops the base ban list — a false negative confirmed independently by both Wave 3 spikes. Closes 0010's overrides-merge open caveat.
+**Why**: The failure mode is a silent false negative in the layering lint that D-0002/D-0006 depend on; the mitigation is proven twice and cheap.
+**From**: both Wave 3 spike findings (user call at the Wave 3 gate)
+**Affects**: 0040, 0060, 0070, and any future oxlint config
