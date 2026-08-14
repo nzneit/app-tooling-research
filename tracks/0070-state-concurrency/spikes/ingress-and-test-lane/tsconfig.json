@@ -4,10 +4,12 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "lib": ["es2023", "dom"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": ["src", "test"]
