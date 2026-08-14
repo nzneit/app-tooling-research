@@ -13,6 +13,8 @@ export interface CompiledRow {
   /** concrete broker filter, e.g. 'plant/+/telemetry' */
   readonly filter: string;
   readonly policy: ChannelPolicy<unknown>;
+  /** named wildcards in the pattern, pre-parsed at construction */
+  readonly paramNames: readonly string[];
   readonly direction: "in" | "out" | "inout";
   readonly qos: 0 | 1;
   readonly sample: number;
@@ -69,6 +71,7 @@ export function compilePolicy(table: PolicyTable): readonly CompiledRow[] {
       pattern,
       filter: clean(pattern),
       policy,
+      paramNames: namedWildcards(pattern),
       direction: policy.direction ?? "in",
       qos: policy.qos ?? 0,
       sample,
@@ -102,11 +105,32 @@ function stringify(params: Record<string, unknown>): TopicParams {
   return out;
 }
 
-/** Build a concrete publish topic from a channel key + params. */
+/** Named wildcards of a compiled pattern: `plant/+plantId/#rest` -> [plantId, rest]. */
+function namedWildcards(pattern: string): readonly string[] {
+  return pattern
+    .split("/")
+    .filter((s) => s.startsWith("+") || s.startsWith("#"))
+    .map((s) => s.slice(1))
+    .filter((n) => n.length > 0);
+}
+
+/**
+ * Build a concrete publish topic from a channel key + params.
+ *
+ * The missing-param check reads the SUPPLIED params, never the produced topic:
+ * mqtt-pattern stringifies a missing value to the literal "undefined", so
+ * scanning the topic for that substring rejects legitimate values like
+ * `{plantId: 'undefined-sensor'}`.
+ */
 export function fillTopic(row: CompiledRow, params: TopicParams | undefined): string {
-  const topic = fill(row.pattern, (params ?? {}) as never) as string;
-  if (topic.includes("undefined") && !row.channel.includes("undefined"))
-    throw new Error(`boundary: publish to "${row.channel}" is missing topic params`);
+  const supplied: Readonly<Record<string, string | undefined>> = params ?? {};
+  for (const name of row.paramNames) {
+    if (supplied[name] === undefined)
+      throw new Error(
+        `boundary: publish to "${row.channel}" is missing topic param "${name}"`,
+      );
+  }
+  const topic = fill(row.pattern, supplied as never) as string;
   if (!matches(row.pattern, topic))
     throw new Error(`boundary: publish to "${row.channel}" produced an invalid topic "${topic}"`);
   return topic;

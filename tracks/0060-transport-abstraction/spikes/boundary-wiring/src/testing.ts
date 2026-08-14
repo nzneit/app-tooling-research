@@ -41,6 +41,7 @@ export function memoryBrokerAdapter(): MemoryBroker {
   let refusing = false;
   let duplicates = 0;
   let autoMessageId = 1;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   const published: { topic: string; payload: Uint8Array; qos: 0 | 1 }[] = [];
   const subs = new Set<string>();
   const subscribeLog: string[] = [];
@@ -71,6 +72,8 @@ export function memoryBrokerAdapter(): MemoryBroker {
           ended = true;
           connected = false;
           handlers = null;
+          if (retryTimer !== null) clearTimeout(retryTimer);
+          retryTimer = null;
         },
       };
     },
@@ -133,8 +136,18 @@ export function memoryBrokerAdapter(): MemoryBroker {
     },
   };
 
+  /**
+   * The adapter's retry LOOP, standing in for mqtt.js's reconnectPeriod.
+   *
+   * Deliberately a MACROTASK (setTimeout), not queueMicrotask: while
+   * refuseReconnects() is in force this loop re-arms itself indefinitely, and
+   * a self-re-queuing microtask starves the macrotask queue outright — timers
+   * in the test never fire and the run hangs. The timer is unref'd where the
+   * runtime supports it, so a forgotten broker can never hold the process open.
+   */
   function retry(): void {
-    queueMicrotask(() => {
+    const timer = setTimeout(() => {
+      retryTimer = null;
       if (ended || connected || handlers === null) return;
       if (refusing) {
         handlers.onLifecycle("reconnect");
@@ -145,7 +158,9 @@ export function memoryBrokerAdapter(): MemoryBroker {
       }
       connected = true;
       handlers.onLifecycle("connect");
-    });
+    }, 1);
+    (timer as { unref?: () => void }).unref?.();
+    retryTimer = timer;
   }
 
   return broker;

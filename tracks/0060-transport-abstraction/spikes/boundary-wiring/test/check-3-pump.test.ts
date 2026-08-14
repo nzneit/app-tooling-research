@@ -170,12 +170,18 @@ describe("check 3 — flood over the real broker", () => {
     await waitFor(() => (broker?.subscribeLog.length ?? 0) >= 1, { label: "subscribe" });
 
     const N = 300;
+    const DELIVERY_BOUND = 8;
     const body = JSON.stringify({ tempC: 5, at: "flood" });
-    // Fire the whole burst without awaiting each ack, so packets coalesce into
-    // single TCP reads and several land inside one turn of the packet pump.
-    await Promise.all(
-      Array.from({ length: N }, () => broker?.publish("plant/p1/telemetry", body, 1)),
+    // Enqueue the whole burst into aedes in ONE synchronous turn — no await
+    // between publishes — so the packets coalesce into single TCP reads and
+    // many land inside one turn of the packet pump. Awaiting each ack instead
+    // hands the drain a microtask between every packet, the consumer keeps up,
+    // and nothing sheds (correct behaviour, but it proves nothing about the
+    // bound). See findings.md, "Real-broker shedding needs a burst".
+    const acks = Array.from({ length: N }, () =>
+      broker?.publish("plant/p1/telemetry", body, 1),
     );
+    await Promise.all(acks);
 
     const shedCount = () =>
       b.quarantine.entries().filter((e) => e.error.class === 1 && e.error.reason === "queue-overflow")
@@ -185,9 +191,14 @@ describe("check 3 — flood over the real broker", () => {
       label: "all packets accounted for",
     });
 
+    // Every packet is accounted for: nothing is silently lost.
     expect(delivered + shedCount()).toBe(N);
-    // The queue absorbed real bursts rather than dispatching on the pump.
-    expect(peakDepth).toBeGreaterThan(1);
+    // The bound actually bit — this is the assertion the findings row cites.
+    expect(shedCount()).toBeGreaterThan(0);
+    // ...and the queue filled to exactly the configured bound before shedding.
+    expect(peakDepth).toBe(DELIVERY_BOUND);
+    // The whole point: the mqtt.js client never lost the connection while a
+    // deliberately slow consumer fell behind.
     expect(b.actor.getSnapshot().connection).toBe("connected");
     expect(states.has("reconnecting")).toBe(false);
     expect(states.has("degraded")).toBe(false);

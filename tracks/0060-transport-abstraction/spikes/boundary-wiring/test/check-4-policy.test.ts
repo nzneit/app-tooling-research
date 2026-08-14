@@ -142,7 +142,24 @@ describe("check 4 — policy table", () => {
     ).rejects.toThrow(/inbound-only/);
     await expect(
       b.publish("plant/{plantId}/command", { action: "stop" }),
-    ).rejects.toThrow(/missing topic params/);
+    ).rejects.toThrow(/missing topic param "plantId"/);
+    await b.dispose();
+  });
+
+  it("accepts a param value that merely contains the word 'undefined'", async () => {
+    const { b, memory } = await harness();
+    // Regression: the missing-param guard used to scan the produced topic for
+    // the substring "undefined", which rejects legitimate values like these.
+    await b.publish("plant/{plantId}/command", { action: "stop" }, { plantId: "undefined" });
+    await b.publish(
+      "plant/{plantId}/command",
+      { action: "start" },
+      { plantId: "undefined-sensor-3" },
+    );
+    expect(memory.published.map((p) => p.topic)).toEqual([
+      "plant/undefined/command",
+      "plant/undefined-sensor-3/command",
+    ]);
     await b.dispose();
   });
 

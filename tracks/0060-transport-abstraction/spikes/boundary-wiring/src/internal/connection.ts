@@ -36,7 +36,15 @@ export interface ConnectionActor {
   attempt(): number;
   degradedSince(): number | undefined;
   send(ev: ConnectionEvent): void;
+  /** Fires only when the state VALUE changes — the hook for side effects. */
   onTransition(listener: (state: ConnectionState) => void): () => void;
+  /**
+   * Fires when the state value OR the projected context changes. `attempt` is
+   * a wire-2 field, and a bounded-retry self-transition re-enters `reconnecting`
+   * without changing the state value — so transition-only notification leaves
+   * wire 2 reporting a stale attempt count for the whole give-up sequence.
+   */
+  onChange(listener: () => void): () => void;
   stop(): void;
 }
 
@@ -86,14 +94,25 @@ export function createConnectionActor(opts: ConnectionMachineOptions): Connectio
 
   const actor = createActor(machine, { clock: opts.clock });
   const listeners = new Set<(s: ConnectionState) => void>();
+  const changeListeners = new Set<() => void>();
   let current: ConnectionState = "idle";
+  let lastAttempt = 0;
+  let lastDegradedSince: number | undefined;
   let stopped = false;
 
   actor.subscribe((snapshot) => {
     const next = snapshot.value as ConnectionState;
-    if (next === current) return;
-    current = next;
-    for (const l of [...listeners]) l(next);
+    const { attempt, degradedSince } = snapshot.context;
+    if (next === current && attempt === lastAttempt && degradedSince === lastDegradedSince) return;
+    lastAttempt = attempt;
+    lastDegradedSince = degradedSince;
+    if (next !== current) {
+      current = next;
+      // Side effects first, so any change notification observes the post-effect
+      // world (resubscribe applied, link ended, publish queue drained).
+      for (const l of [...listeners]) l(next);
+    }
+    for (const l of [...changeListeners]) l();
   });
   actor.start();
 
@@ -108,6 +127,10 @@ export function createConnectionActor(opts: ConnectionMachineOptions): Connectio
     onTransition: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    onChange: (listener) => {
+      changeListeners.add(listener);
+      return () => changeListeners.delete(listener);
     },
     stop: () => {
       if (stopped) return;

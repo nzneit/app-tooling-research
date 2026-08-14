@@ -69,6 +69,15 @@ export interface BoundaryConfig<P extends PolicyTable> {
       clientId?: string;
       transformWsUrl?: (url: string) => string;
     };
+    /**
+     * How long a single connection attempt may hang before the adapter aborts
+     * it and the retry loop takes over. Default 4000.
+     *
+     * Addition to design.md's config shape (recorded in findings.md): it was a
+     * hardcoded 4000 inside the mqtt.js adapter, which is exactly the kind of
+     * fact the interface is supposed to own rather than bury in an adapter.
+     */
+    connectTimeoutMs?: number;
     reconnect?: {
       /** default 1000 (mqtt.js reconnectPeriod) — the adapter's retry LOOP. */
       periodMs?: number;
@@ -207,6 +216,8 @@ export interface BrokerConnectOptions {
   readonly clean: true;
   /** adapter owns the retry LOOP; module owns give-up POLICY. */
   readonly reconnectPeriodMs: number;
+  /** per-attempt connect timeout; the module owns the value, the adapter applies it. */
+  readonly connectTimeoutMs: number;
   readonly transformWsUrl?: (url: string) => string;
   readonly username?: string;
   readonly password?: string;

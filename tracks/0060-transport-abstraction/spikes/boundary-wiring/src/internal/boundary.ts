@@ -59,6 +59,7 @@ interface PendingPublish {
 
 const DEFAULTS = {
   reconnectPeriodMs: 1000,
+  connectTimeoutMs: 4000,
   maxAttempts: 10,
   delivery: 256,
   publish: 64,
@@ -309,6 +310,7 @@ export function createTransportBoundary<const P extends PolicyTable>(
         clientId: config.mqtt.auth?.clientId ?? `boundary-${Math.random().toString(16).slice(2)}`,
         clean: true,
         reconnectPeriodMs: reconnectCfg.periodMs ?? DEFAULTS.reconnectPeriodMs,
+        connectTimeoutMs: config.mqtt.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs,
         transformWsUrl: config.mqtt.auth?.transformWsUrl,
         username: config.mqtt.auth?.username,
         password: config.mqtt.auth?.password,
@@ -328,6 +330,10 @@ export function createTransportBoundary<const P extends PolicyTable>(
       inspect?.({ type: "link-end-failed", error: err });
     }
   }
+
+  // Wire 2 must see `attempt` climb during the bounded-retry sequence, which
+  // re-enters 'reconnecting' without changing the state value.
+  conn.onChange(markDirty);
 
   conn.onTransition((state) => {
     if (state === "connected") {
@@ -578,7 +584,11 @@ export function createTransportBoundary<const P extends PolicyTable>(
       telemetry.dispose();
       guard.clear();
       await closeLink();
+      // I10: wire silence after dispose(). Both wires — wire-2 subscribers have
+      // already received the terminal 'ended' snapshot from markDirty() above,
+      // so dropping them here leaks nothing and keeps no listener alive.
       wire1.clear();
+      wire2.clear();
     },
   };
 

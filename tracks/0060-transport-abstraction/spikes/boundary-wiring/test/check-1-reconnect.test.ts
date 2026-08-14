@@ -5,7 +5,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { SimulatedClock } from "xstate";
-import { createTransportBoundary, type TransportBoundary } from "../src/index.js";
+import {
+  createTransportBoundary,
+  type BrokerConnectOptions,
+  type BrokerPort,
+  type TransportBoundary,
+} from "../src/index.js";
 import { isTransient, type BoundaryError } from "../src/errors/index.js";
 import { memoryBrokerAdapter } from "../src/testing.js";
 import { policy, rest } from "./fixtures.js";
@@ -128,6 +133,56 @@ describe("check 1 — reconnect edges (real broker)", () => {
   }, 30_000);
 });
 
+describe("check 1 — teardown while the socket is still retrying (real broker)", () => {
+  it("survives dispose() mid-reconnect without an unhandled 'error'", async () => {
+    // Regression: end() used to call client.removeAllListeners(), stripping the
+    // always-attached 'error' handler (and mqtt.js's own internal listeners) on
+    // exactly the path where an in-flight reconnect socket still emits 'error'
+    // — an EventEmitter with no 'error' listener THROWS, killing the process.
+    const uncaught: unknown[] = [];
+    const onUncaught = (err: unknown) => uncaught.push(err);
+    const onRejection = (err: unknown) => uncaught.push(err);
+    process.on("uncaughtException", onUncaught);
+    process.on("unhandledRejection", onRejection);
+    try {
+      broker = await startBroker();
+      const b = createTransportBoundary({
+        mqtt: {
+          url: broker.url,
+          connectTimeoutMs: 300,
+          reconnect: { periodMs: 20, maxAttempts: 200, backoffMs: () => 5000 },
+        },
+        policy,
+        rest,
+      });
+      boundary = b;
+      b.subscribe("plant/{plantId}/telemetry");
+      b.start();
+      await waitFor(() => b.actor.getSnapshot().connection === "connected", {
+        label: "connect",
+      });
+
+      // Kill the broker and let mqtt.js hammer the dead port for a while, so
+      // dispose() lands with a connection attempt genuinely in flight.
+      await broker.stop();
+      await waitFor(() => b.actor.getSnapshot().connection === "reconnecting", {
+        label: "reconnecting",
+      });
+      await new Promise((r) => setTimeout(r, 250));
+
+      await b.dispose();
+      expect(b.actor.getSnapshot().connection).toBe("ended");
+      // Give any late socket error a chance to surface before asserting.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(uncaught).toEqual([]);
+      boundary = null;
+    } finally {
+      process.off("uncaughtException", onUncaught);
+      process.off("unhandledRejection", onRejection);
+    }
+  }, 30_000);
+});
+
 describe("check 1 — give-up policy (deterministic, SimulatedClock)", () => {
   it("counts exactly maxAttempts backoff windows before degrading", async () => {
     const memory = memoryBrokerAdapter();
@@ -152,9 +207,17 @@ describe("check 1 — give-up policy (deterministic, SimulatedClock)", () => {
     expect(b.actor.getSnapshot().connection).toBe("reconnecting");
     expect(b.actor.getSnapshot().attempt).toBe(1);
 
+    // Regression: a bounded-retry self-transition re-enters 'reconnecting'
+    // without changing the state VALUE, so a transition-only notification left
+    // wire 2 reporting attempt 1 for the whole give-up sequence. The attempt
+    // counter is a wire-2 field and must climb, snapshot by snapshot.
+    const attempts: number[] = [];
+    const off = b.actor.subscribe((s) => attempts.push(s.attempt));
     await advance(clock, 1000, 4);
     expect(b.actor.getSnapshot().connection).toBe("reconnecting");
     expect(b.actor.getSnapshot().attempt).toBe(5);
+    expect(attempts).toEqual([2, 3, 4, 5]);
+    off();
 
     await advance(clock, 1000, 1);
     const snap = b.actor.getSnapshot();
@@ -163,6 +226,61 @@ describe("check 1 — give-up policy (deterministic, SimulatedClock)", () => {
     expect(snap.attempt).toBe(5);
     await b.dispose();
     expect(b.actor.getSnapshot().connection).toBe("ended");
+  });
+
+  it("keeps a live macrotask queue while the adapter retry loop is refusing", async () => {
+    // Regression: the memory adapter's retry loop re-armed itself with
+    // queueMicrotask, which starves the macrotask queue outright — a plain
+    // setTimeout(5) never fires and the run hangs. It is a macrotask now.
+    const memory = memoryBrokerAdapter();
+    const clock = new SimulatedClock();
+    const b = createTransportBoundary(
+      { mqtt: { url: "ws://memory", reconnect: { maxAttempts: 50 } }, policy, rest },
+      { broker: memory, clock },
+    );
+    b.start();
+    await Promise.resolve();
+    await Promise.resolve();
+    memory.refuseReconnects();
+    memory.dropConnection();
+
+    const t0 = Date.now();
+    await new Promise((r) => setTimeout(r, 5));
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(b.actor.getSnapshot().connection).toBe("reconnecting");
+    await b.dispose();
+  }, 10_000);
+
+  it("threads connectTimeoutMs to the broker port, defaulting to 4000", async () => {
+    const captured: BrokerConnectOptions[] = [];
+    const spy = (): BrokerPort => ({
+      connect(opts) {
+        captured.push(opts);
+        return {
+          subscribe: async () => {},
+          unsubscribe: async () => {},
+          publish: async () => {},
+          end: async () => {},
+        };
+      },
+    });
+
+    const a = createTransportBoundary(
+      { mqtt: { url: "ws://memory" }, policy, rest },
+      { broker: spy() },
+    );
+    a.start();
+    const c = createTransportBoundary(
+      { mqtt: { url: "ws://memory", connectTimeoutMs: 250 }, policy, rest },
+      { broker: spy() },
+    );
+    c.start();
+
+    expect(captured[0]?.connectTimeoutMs).toBe(4000);
+    expect(captured[1]?.connectTimeoutMs).toBe(250);
+    expect(captured[0]?.clean).toBe(true);
+    await a.dispose();
+    await c.dispose();
   });
 
   it("queues publishes while reconnecting and flushes them on recovery", async () => {

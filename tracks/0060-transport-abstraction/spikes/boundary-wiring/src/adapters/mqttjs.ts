@@ -13,7 +13,7 @@ export function mqttJsBrokerAdapter(): BrokerPort {
         clientId: opts.clientId,
         clean: opts.clean,
         reconnectPeriod: opts.reconnectPeriodMs,
-        connectTimeout: 4000,
+        connectTimeout: opts.connectTimeoutMs,
         resubscribe: false,
         protocolVersion: 4,
         username: opts.username,
@@ -23,19 +23,29 @@ export function mqttJsBrokerAdapter(): BrokerPort {
           : undefined,
       });
 
-      client.on("message", (topic, payload, packet) => {
+      // Named so teardown can detach exactly these and nothing else.
+      const onMessage = (topic: string, payload: Buffer, packet: { messageId?: number; dup?: boolean; qos: 0 | 1 | 2 }) => {
         handlers.onMessage(topic, new Uint8Array(payload), {
           messageId: packet.messageId,
           dup: packet.dup === true,
           qos: packet.qos,
         });
-      });
-      client.on("connect", () => handlers.onLifecycle("connect"));
-      client.on("reconnect", () => handlers.onLifecycle("reconnect"));
-      client.on("close", () => handlers.onLifecycle("close"));
-      client.on("offline", () => handlers.onLifecycle("offline"));
+      };
+      const onConnect = () => handlers.onLifecycle("connect");
+      const onReconnect = () => handlers.onLifecycle("reconnect");
+      const onClose = () => handlers.onLifecycle("close");
+      const onOffline = () => handlers.onLifecycle("offline");
       // Always attached: an unhandled 'error' on an EventEmitter would throw.
-      client.on("error", (err) => handlers.onLifecycle("error", err));
+      const onError = (err: Error) => handlers.onLifecycle("error", err);
+      /** Keeps the 'error' slot occupied while end() tears the socket down. */
+      const swallowError = () => {};
+
+      client.on("message", onMessage);
+      client.on("connect", onConnect);
+      client.on("reconnect", onReconnect);
+      client.on("close", onClose);
+      client.on("offline", onOffline);
+      client.on("error", onError);
 
       return {
         subscribe: (filter, o) =>
@@ -59,8 +69,24 @@ export function mqttJsBrokerAdapter(): BrokerPort {
           }),
         end: () =>
           new Promise<void>((resolve) => {
-            client.removeAllListeners();
-            client.end(true, {}, () => resolve());
+            // Detach only OUR forwarding listeners. removeAllListeners() would
+            // also strip mqtt.js's own internal self-listeners AND leave the
+            // 'error' slot empty — and end() on the give-up path can be racing
+            // an in-flight reconnect socket that still emits 'error', which on
+            // a listener-less EventEmitter is a thrown, process-killing error.
+            // The boundary's generation guard already makes any late callback
+            // inert, so detaching is about noise, never about correctness.
+            client.off("message", onMessage);
+            client.off("connect", onConnect);
+            client.off("reconnect", onReconnect);
+            client.off("close", onClose);
+            client.off("offline", onOffline);
+            client.off("error", onError);
+            client.on("error", swallowError);
+            client.end(true, {}, () => {
+              client.off("error", swallowError);
+              resolve();
+            });
           }),
       };
     },

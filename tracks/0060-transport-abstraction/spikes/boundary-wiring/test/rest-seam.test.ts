@@ -24,7 +24,10 @@ function harness(routes: Parameters<typeof scriptedFetchAdapter>[0]) {
 }
 
 describe("REST seam (surface for Task 6)", () => {
-  it("resolves a validated 2xx JSON body", async () => {
+  // NB: nothing validates here yet — the per-status zod schemas are Task 6's.
+  // What this asserts is the branding passthrough: a decoded 2xx JSON body
+  // resolves through the fetcher unchanged and typed as Validated<T>.
+  it("passes a decoded 2xx JSON body through as Validated<T> (no schema yet)", async () => {
     const b = harness([
       { method: "GET", url: "/v1/plants", status: 200, body: { plants: ["p1"] } },
     ]);
@@ -34,7 +37,11 @@ describe("REST seam (surface for Task 6)", () => {
     await b.dispose();
   });
 
-  it("rejects a declared non-2xx JSON body as class 3, carrying the status", async () => {
+  // Seam-level only: EVERY non-2xx JSON body currently becomes class 3.
+  // design.md reserves class 3 for a DECLARED status whose body parses against
+  // its per-status schema, and routes an UNDECLARED status to class 4
+  // 'undeclared-status'. Building that split is Task 6's obligation.
+  it("rejects a non-2xx JSON body as class 3, carrying the status", async () => {
     const b = harness([
       { method: "GET", url: "/v1/plants", status: 409, body: { code: "E_CONFLICT" } },
     ]);
@@ -107,7 +114,9 @@ describe("lifecycle (I10)", () => {
       { broker: memory },
     );
     const events: unknown[] = [];
+    const snapshots: unknown[] = [];
     b.actor.on("*", (e) => events.push(e));
+    b.actor.subscribe((s) => snapshots.push(s));
     b.subscribe("plant/{plantId}/telemetry");
     b.start();
     b.start();
@@ -119,11 +128,16 @@ describe("lifecycle (I10)", () => {
     expect(b.actor.getSnapshot().connection).toBe("ended");
     expect(b.actor.getSnapshot().publishGated).toBe(true);
     expect(memory.ended).toBe(true);
+    // Wire 2 saw the terminal 'ended' snapshot before being released.
+    expect((snapshots.at(-1) as { connection: string }).connection).toBe("ended");
 
     const before = events.length;
+    const snapshotsBefore = snapshots.length;
     memory.deliver("plant/p1/telemetry", JSON.stringify({ tempC: 1, at: "t" }), { messageId: 1 });
     await new Promise((r) => setTimeout(r, 5));
+    // I10: BOTH wires go silent, not just wire 1.
     expect(events).toHaveLength(before);
+    expect(snapshots).toHaveLength(snapshotsBefore);
 
     const err = await b
       .publish("plant/{plantId}/command", { action: "stop" }, { plantId: "p1" })
