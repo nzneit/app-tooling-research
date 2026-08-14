@@ -4,7 +4,7 @@ Facts about the application under study, supplied by the user (the app repo is n
 accessible from here — D-0004). Reports cite this file; a missing fact becomes a declared
 assumption in the report. Partial answers are fine.
 
-**Status**: partially filled (2026-08-14: React, TypeScript, strictness)
+**Status**: partially filled (2026-08-14: React, TypeScript, strictness, repo layout)
 
 ## Stack
 - React version: 18.3.1 (2026-08-14, user — React 19 not in play)
@@ -14,7 +14,16 @@ assumption in the report. Partial answers are fine.
 - Node version:
 - Build tool (Vite / webpack / other):
 - Package manager:
-- Monorepo or single package:
+- Monorepo or single package: **pseudo-monorepo** (2026-08-14, user) — the codebase is
+  split across separate package directories, but those directories carry **no individual
+  package.json and no individual versioning**. There is one root package.json and
+  everything is downstream of it: no npm/pnpm/yarn workspaces, no per-directory
+  dependency lists, no independent versions. Directories express package-like intent
+  without npm package boundaries. Consequence to carry into every recommendation: JS
+  tooling that advertises "monorepo support" generally keys it on package.json
+  workspaces and will not engage here; conversely, nothing at the package-manager level
+  enforces which directory may import what, so directory boundaries are convention plus
+  path-based lint rules only.
 
 ## Contracts
 - OpenAPI version(s):
