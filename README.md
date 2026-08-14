@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** surveying 0090-horizon-scan; the D-0019 ordering-stamp requirement still awaits the contract owners.
+> **Frontier:** 0090 report drafted — awaiting user review (7 direct adoptions, 2 proposed future tracks, 1 skip); the D-0019 ordering-stamp requirement still awaits the contract owners.
 
 ## How it works
 
@@ -39,4 +39,4 @@ in `findings.md` — the durable artifact.
 | 0050-logging | Config- and runtime-controllable logging facade (sinks, levels, throttling) | accepted |
 | 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | accepted |
 | 0070-state-concurrency | Composable Zustand+xstate patterns; race-condition prevention (Wave 2 — starts from 0010's accepted report) | accepted |
-| 0090-horizon-scan | "Anything else" discovery session | surveying |
+| 0090-horizon-scan | "Anything else" discovery session | report drafted |
