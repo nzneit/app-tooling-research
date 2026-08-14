@@ -7,7 +7,7 @@ This document is the output of a design-it-twice interface panel: four sub-agent
 **Constraints any interface must satisfy** (fixed by the panel brief and the accepted report; none was up for redesign):
 
 - **Single-dispatch ingress**: validated messages enter state through one entry point per stream, in the fixed pipeline order dedup → guard → mask → dispatch.
-- **Guards** are per-(topic, entity) monotonic, stamp-ready but stamp-absent today (assumption A-1 in the report): without a server-issued stamp the guard runs local epoch/dedup rules, and the interface must accept a stamp when contracts gain one **without reshaping callers**.
+- **Guards** are per-(topic, entity) monotonic, stamp-ready but stamp-absent today (assumption A-1 in the report): without a server-issued stamp the guard runs local epoch/dedup rules, and the interface must accept a stamp when contracts gain one **without reshaping callers**. The Chosen interface below declares `stream`s whose `topic` may be an MQTT wildcard pattern spanning several concrete topics, so this constraint is realized as a `(stream, entity)` guard key that stamped mode honors regardless of concrete topic and unstamped mode narrows to `(stream, concreteTopic, entity)` per wildcarded stream (invariant 4) — the reconciliation between "(topic, entity)" here and "(stream, entity)" there is welcome, since it makes the wildcard/ordering interaction explicit instead of assumed.
 - **Entity ownership is partitioned**: REST-backed entities live in the QueryCache; MQTT-only entities live in Zustand/machine state behind the ingress; dual-leg entities use invalidate-don't-set (`staleTime: Infinity` on push-covered queries; the MQTT event invalidates, REST remains the cache's single writer). Copying query data into Zustand is banned.
 - **Cancellation**: `AbortController`/`AbortSignal` is the only primitive; every async function takes and forwards a signal; commit points check `signal.aborted`; a boundary-owned signal composes with per-actor signals via `AbortSignal.any()`; machine async work is spawned as child actors.
 - **Composition wires**: machine → store is `actor.subscribe` selector projection into `setState`; store → machine is `subscribeWithSelector` `(next, prev)` → `actor.send`. Discrete events ride the 0060 boundary's `actor.on` wire, not these.
@@ -147,7 +147,9 @@ export type FeedEvent<P = unknown> =
  *  - deliveries are serialized — a message's pipeline completes before the
  *    next delivery begins; no re-entrant deliver();
  *  - per-topic arrival order is preserved (MQTT §4.6, single connection, A-6);
- *    nothing is promised across topics — that is the guard's job;
+ *    nothing is promised across topics — that is the guard's job, and for
+ *    wildcarded streams in unstamped mode it is the reason the guard key
+ *    includes the concrete topic (invariant 4);
  *  - the adapter MUST emit { kind: 'gap' } on any reconnect that may have
  *    lost messages.
  * Two adapters exist from day one — the production closure over 0060's
@@ -183,7 +185,13 @@ export interface StreamDecl<P = unknown> {
   /** String form supports MQTT wildcards ('orders/+/updated', 'rig/#');
    *  predicate form for anything richer. */
   topic: string | ((topic: string) => boolean);
-  /** Guard/mask key half: the guard and mask key is (stream, entity). */
+  /** Guard/mask key half. Mask key is always (stream, entity) — see the
+   *  mask invariant (6). Guard key is (stream, entity) in stamped mode,
+   *  where the stamp totally orders regardless of concrete topic; in
+   *  unstamped mode (A-1) it is (stream, entity) for a literal-topic
+   *  stream and (stream, concreteTopic, entity) for a wildcarded stream
+   *  (invariant 4) — an `entity` that spans two concrete topics of the
+   *  same wildcard stream while unstamped is a declaration error. */
   entity: (msg: ValidatedMessage<P>) => string;
   /** Stamp selector — stamp-ready, stamp-absent today (A-1). Adding this
    *  later is the ONLY change needed to flip the stream from epoch rules
@@ -339,18 +347,76 @@ export function createRaceHarness(s: fc.Scheduler): RaceHarness;
 
 1. **Pipeline order is fixed per message**: dedup → guard → mask → dispatch, synchronously, in one JS turn (riding Zustand's synchronous commit for atomicity). Not configurable; observable only via `inspect` and `stats`.
 2. **Single dispatch**: at most one kit per feed; the kit is the sole transport-side writer of every stream's target. Enforced by oxlint `no-restricted-imports` (D-0002): outside the composition root, neither the feed nor store internals are importable.
-3. **Guard**: per-(stream, entity) monotonic. Stamped → strictly-greater wins; regressions and equals dropped (`stats.stale`, visible in `inspect`). Unstamped (A-1) → epoch rules only: pre-gap/pre-dispose stragglers dropped; same-epoch messages pass in feed order. Mode selection is per-message and data-driven — callers change nothing when contracts gain stamps beyond adding the `stamp` selector.
-4. **Invalidate-don't-set**: unstamped query targets only ever invalidate; the app must set `staleTime: Infinity` on push-covered queries (dev-mode warning where detectable). `write` fires only stamp-guarded and cancelQueries-preceded. Copying query data into Zustand is banned (lint-enforced; no `DispatchTarget` shape can read the QueryCache, so the interface offers no affordance for it either).
-5. **Mask (withhold-latest, not drop)**: while a `(stream, entity)` has an in-flight kit-bound mutation, incoming server data for it is withheld; on settle, the **latest** withheld item is released back through guard → dispatch. Query targets coalesce into the settle-gate invalidation; store/machine targets receive the released item — chosen over drop-and-resync because MQTT-only entities have no REST leg to resync from.
-6. **Settle gate**: invalidation fires only when the mutation is the last in flight for its key (`isMutating() === 1`). Rollback on error is unconditional and restores the pre-optimistic snapshot, even if caller code observing the outcome throws.
-7. **Gap**: bumps all guard epochs; bulk-invalidates each query stream's `family` (or replays its seen-key set when `family` is absent); sends `{ type: 'ingress.gap' }` to machine targets (no enabled transition → free no-op); calls `onGap` on streams that declare it; increments `stats.gaps`. `refetchOnReconnect` covers never-pushed keys.
-8. **Wires carry continuous projections only**; discrete events ride 0060's `actor.on`. Wire fan-out is synchronous; a send that would re-enter dispatch is queued run-to-completion (mailbox semantics — no re-entrancy, no live-lock).
-9. **Cancellation**: `kit.signal` composes the boundary signal with dispose; each `mutationFn` call gets a per-call signal composed via `AbortSignal.any()`; commit points check `signal.aborted` before writing; `AbortError` resolves as `{ outcome: 'cancelled' }` and is never classified into the four-class taxonomy (owned by `transport-boundary/errors`).
-10. **Teardown order** on `dispose()`: feed unsubscribe → store→machine wires → machine→store wires → signal abort → registries cleared. Idempotent; a feed delivering after dispose is silently ignored.
+3. **Guard**: monotonic per entity. Stamped → key is `(stream, entity)`, strictly-greater wins, regressions and equals dropped (`stats.stale`, visible in `inspect`); the stamp totally orders regardless of concrete topic. Unstamped (A-1) → epoch rules only, keyed per invariant 4 (`(stream, entity)` for a literal-topic stream, `(stream, concreteTopic, entity)` for a wildcarded one): pre-gap/pre-dispose stragglers dropped; same-epoch messages pass in feed order. Mode selection is per-message and data-driven — callers change nothing when contracts gain stamps beyond adding the `stamp` selector.
+4. **Guard key under wildcard streams (disambiguation)**: unstamped-mode ordering leans on the feed seam's per-topic delivery guarantee (the `IngressFeed` contract above), which does not extend across concrete topics. So for a wildcarded `topic` pattern (`'orders/+/updated'`, `'rig/#'`), the unstamped guard keys by `(stream, concreteTopic, entity)` — one high-water mark per concrete topic — instead of by `(stream, entity)`. This is sound only if each `entity` value is delivered on exactly one concrete topic within the stream; the kit does not assume this silently. An entity observed on a second concrete topic of the same wildcard stream while unstamped is a declaration error: the guard cannot place the message in that entity's ordered sequence, so it drops the message and counts it under `stats.stale`, visible via `inspect` (`stage: 'guard'`, `verdict: 'drop'`) — the same accounting path as an ordinary stale drop, and the caller's signal to fix the stream's `entity` extractor. Stamped mode has no such restriction: the stamp totally orders per `(stream, entity)` regardless of concrete topic, so a wildcard stream may freely fan one entity across topics once stamped.
+5. **Invalidate-don't-set**: unstamped query targets only ever invalidate; the app must set `staleTime: Infinity` on push-covered queries (dev-mode warning where detectable). `write` fires only stamp-guarded and cancelQueries-preceded. Copying query data into Zustand is banned (lint-enforced; no `DispatchTarget` shape can read the QueryCache, so the interface offers no affordance for it either).
+6. **Mask (withhold-latest, not drop)**: while a `(stream, entity)` has an in-flight kit-bound mutation, incoming server data for it is withheld; on settle, the **latest** withheld item is released back through guard → dispatch. Query targets coalesce into the settle-gate invalidation; store/machine targets receive the released item — chosen over drop-and-resync because MQTT-only entities have no REST leg to resync from. The mask key stays `(stream, entity)` even under wildcarded streams — it does not split by concrete topic the way the unstamped guard does (invariant 4): mask coordinates with the caller-declared `mask` on `OptimisticMutationOptions`, and invariant 4's disambiguation rule already guarantees a given entity has at most one legitimate concrete topic per stream, so no topic qualifier is needed here.
+7. **Settle gate**: invalidation fires only when the mutation is the last in flight for its key (`isMutating() === 1`). Rollback on error is unconditional and restores the pre-optimistic snapshot, even if caller code observing the outcome throws.
+8. **Gap**: bumps all guard epochs; bulk-invalidates each query stream's `family` (or replays its seen-key set when `family` is absent); sends `{ type: 'ingress.gap' }` to machine targets (no enabled transition → free no-op); calls `onGap` on streams that declare it; increments `stats.gaps`. `refetchOnReconnect` covers never-pushed keys.
+9. **Wires carry continuous projections only**; discrete events ride 0060's `actor.on`. Wire fan-out is synchronous; a send that would re-enter dispatch is queued run-to-completion (mailbox semantics — no re-entrancy, no live-lock).
+10. **Cancellation**: `kit.signal` composes the boundary signal with dispose; each `mutationFn` call gets a per-call signal composed via `AbortSignal.any()`; commit points check `signal.aborted` before writing; `AbortError` resolves as `{ outcome: 'cancelled' }` and is never classified into the four-class taxonomy (owned by `transport-boundary/errors`).
+11. **Teardown order** on `dispose()`: feed unsubscribe → store→machine wires → machine→store wires → signal abort → registries cleared. Idempotent; a feed delivering after dispose is silently ignored.
 
 **Error modes**: `createStateKit` throws synchronously — `IngressConfigError` — on `streams` without `feed`, and on query targets (or any mutation use) without `queryClient`: misconfiguration fails at the composition root, not at message time. At message time, `unmatched-topic` and `dispatch-failed` route to `onError` and the pipeline continues — a poisoned message never stalls a stream (at-most-once past validation; no retry). Guard/mask drops are never exceptions; they are counted and inspectable.
 
 **Performance**: O(1) per message (map lookups plus one compare); bounded dedup LRU (`dedupCapacity`); synchronous fan-out is immaterial at A-7's ≤1k msg/s.
+
+## Worked usage example
+
+One dual-leg stream declared over a wildcard topic (`orders/+/updated`, invalidate-don't-set), one machine→store wire, and one `fc.scheduler` property driven through `RaceHarness` — the same seam production uses, per invariant 1's "observable only via `inspect` and `stats`":
+
+```typescript
+import { createStateKit, createRaceHarness, type StreamDecl, type Wire } from '@app/state-kit';
+import { QueryClient } from '@tanstack/react-query';
+import { createActor, createMachine } from 'xstate';
+import { createStore } from 'zustand/vanilla';
+import fc from 'fast-check';
+
+interface OrderUpdated { orderId: string; status: 'placed' | 'shipped' }
+
+// Dual-leg entity: MQTT invalidates, REST (elsewhere) remains the writer.
+// entity() disambiguates by orderId — invariant 4's requirement for a
+// wildcarded stream: each orderId arrives on exactly one concrete topic.
+const orderStream: StreamDecl<OrderUpdated> = {
+  topic: 'orders/+/updated',
+  entity: (msg) => msg.payload.orderId,
+  dispatch: {
+    query: (msg) => ['order', msg.payload.orderId],
+    family: ['order'],                       // O(1) reconnect-gap invalidation
+  },
+};
+
+const rigMachine = createMachine({ id: 'rig', initial: 'idle', states: { idle: {} } });
+const rigActor = createActor(rigMachine).start();
+const rigStore = createStore<{ status: string }>(() => ({ status: 'idle' }));
+
+const wires: Wire[] = [
+  { fromMachine: rigActor, select: (snap) => snap.value, into: (v) => rigStore.setState({ status: v }) },
+];
+
+const queryClient = new QueryClient();
+
+// One fc.scheduler property: two updates for the same order, in fc-chosen
+// interleaving, must each clear dedup → guard → mask → dispatch exactly once.
+const property = fc.asyncProperty(fc.scheduler(), async (s) => {
+  const harness = createRaceHarness(s);
+  const kit = createStateKit({ feed: harness.feed, streams: { order: orderStream }, wires, queryClient });
+
+  harness.push(
+    { topic: 'orders/42/updated', packetId: 'm1:orders/42/updated', payload: { orderId: '42', status: 'placed' } },
+    { topic: 'orders/42/updated', packetId: 'm2:orders/42/updated', payload: { orderId: '42', status: 'shipped' } },
+  );
+  await harness.settle();
+
+  const seen = kit.stats.dispatched + kit.stats.stale + kit.stats.duplicate;
+  kit.dispose();
+  return seen === 2;
+});
+
+await fc.assert(property);
+```
+
+`orderStream` typechecks as a query-target `StreamDecl<OrderUpdated>`; `wires[0]` typechecks as the `fromMachine` arm of `Wire` because `rigActor` structurally satisfies `{ subscribe(cb): { unsubscribe(): void }; getSnapshot(): any }`; `harness.push` takes the same `ValidatedMessage` shape the seam contract declares. `createStateKit`, `createRaceHarness`, and `orderStream.dispatch` are exactly the Chosen interface above — nothing here is a stand-in surface.
 
 ## Rationale
 
@@ -365,5 +431,5 @@ export function createRaceHarness(s: fc.Scheduler): RaceHarness;
 - **Flexible's port-per-stage surface** (`DispatchTarget`, `MaskProvider`, `StampOrder`, `MonotonicGuard`): each port is interface a caller can meet, so each dilutes depth; the guard port ships one adapter — a hypothetical seam by the two-adapter rule — and its "implementations MUST be monotonic" contract pushes the kit's core correctness obligation onto adapter authors. The fixed pipeline needs policy slots (`stamp`, `mask`, `write`), not pluggable stages.
 - **Ports-adapters' `SchedulerPort` and `FetchPort`**: the candidate's own trade-off section concedes both are thin — the production fetch adapter is a near-identity pass-through and the scheduler port risks decaying to single-adapter indirection. The REST leg is already a real seam as a plain injected function shape; time never needs a port here (dedup can be size-bounded).
 - **Drop-and-resync mask semantics** (ports-adapters): resync-by-invalidation is meaningless for MQTT-only entities, which have no REST leg. Withhold-latest releases through guard → dispatch and coalesces to invalidation for query targets — strictly more general at the same bounded cost (one item per masked entity).
-- **Standalone wire helpers** (common-caller): kept inside `StateKitConfig` instead, because the shared run-to-completion queue between ingress dispatch and wire fan-out is a correctness property (invariant 8) that standalone helpers would forfeit, and one teardown ordering (invariant 10) is worth the small detour of a streamless kit for transport-free pairs.
+- **Standalone wire helpers** (common-caller): kept inside `StateKitConfig` instead, because the shared run-to-completion queue between ingress dispatch and wire fan-out is a correctness property (invariant 9) that standalone helpers would forfeit, and one teardown ordering (invariant 11) is worth the small detour of a streamless kit for transport-free pairs.
 - **Common-caller's `CompositionLoopError` throw at re-entrancy depth 2**: minimal's mailbox-style queueing is strictly better — it makes the hazard impossible rather than making it crash, matching the actor-model posture the whole architecture rests on.
