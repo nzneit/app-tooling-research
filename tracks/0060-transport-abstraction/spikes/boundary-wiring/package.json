@@ -8,7 +8,16 @@
   },
   "devDependencies": {
     "@types/node": "26.2.0",
+    "@types/ws": "8.18.1",
+    "aedes": "1.1.1",
+    "ajv": "8.20.0",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "ws": "8.21.3"
+  },
+  "dependencies": {
+    "mqtt": "5.15.2",
+    "mqtt-pattern": "2.1.1",
+    "xstate": "5.32.5"
   }
 }
