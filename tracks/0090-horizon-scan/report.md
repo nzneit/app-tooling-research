@@ -4,7 +4,7 @@
 
 This track examined the tooling areas that tracks 0010–0070 did not cover. We recommend seven direct adoptions. The tools are knip, dependency-cruiser, MSW for REST test mocks, type-coverage, size-limit, eslint-plugin-jsx-a11y, and OSV-Scanner. We recommend two future tracks: React Compiler adoption and Playwright end-to-end tests. MSW does not fit the MQTT test lane; the aedes broker harness from the 0060 spike keeps that role.
 
-The most important risk is two unknown app facts. The build tool fact gates the size-limit choice and the React Compiler install path. The strictness fact gates the type-coverage ratchet design. Most winning tools have one maintainer each. The next step is to answer the intake questions and accept or amend each disposition.
+The most important risk is the unknown build tool. This fact gates the size-limit choice and the React Compiler install path. Track 0100 now owns the type-coverage ratchet design. Most winning tools have one maintainer each. The next step is to answer the intake questions and accept or amend each disposition.
 
 **As of**: 2026-08-14 (versions evaluated are listed per area)
 **Recommendation**: adopt (seven direct adoptions) — knip 6.32.2, dependency-cruiser 18.2.0, MSW 2.15.0 (REST leg, via orval `mock: true`), type-coverage 2.30.1, size-limit 13.0.3, eslint-plugin-jsx-a11y 6.10.2, OSV-Scanner 2.5.0; two proposed future tracks — React Compiler adoption, Playwright end-to-end testing; one skip — MSW on the MQTT-over-WSS leg (the aedes-over-ws harness stands)
@@ -23,7 +23,7 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 | Dependency-architecture rules in CI | dependency-cruiser 18.2.0 | direct adopt |
 | Test-lane REST mocking | MSW 2.15.0 via orval `mock: true` | direct adopt |
 | Test-lane MQTT mocking | — | skip — the aedes-over-ws harness (0060 spike) stands |
-| Type coverage / any-leakage ratchet | type-coverage 2.30.1 | direct adopt, ratchet design gated on the strictness fact (intake) |
+| Type coverage / any-leakage ratchet | type-coverage 2.30.1 | direct adopt as an **input to track 0100** (D-0021), which owns the ratchet design |
 | React Compiler adoption | babel-plugin-react-compiler 1.0.0 | **future track** (proposed 0100) |
 | Bundle-budget enforcement in CI | size-limit 13.0.3 | direct adopt, with a build-tool-fact caveat (intake) |
 | Accessibility linting (sweep) | eslint-plugin-jsx-a11y 6.10.2 | direct adopt into the ESLint-in-CI lane |
@@ -45,6 +45,32 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 **Competing tools are both archived and both point at knip.** [ts-prune](https://github.com/nadeesha/ts-prune) was archived by its owner on 2025-09-19; its README now reads "For new projects, we recommend knip." [depcheck](https://github.com/depcheck/depcheck) was archived 2025-06-16; its README states it's "no longer actively maintained" and explicitly recommends knip for "better support for TypeScript, monorepos, and modern build tools." Download counts corroborate the migration: depcheck ~1.77M/week and ts-prune ~602K/week ([npm downloads API](https://api.npmjs.org/downloads/point/last-week/depcheck), [ts-prune](https://api.npmjs.org/downloads/point/last-week/ts-prune)) — both still non-trivial from installed-base inertia, but an order of magnitude below knip and declining as archival notices propagate. `unimported` remains alive but is narrower by design — file-import reachability only, no export- or dependency-level analysis — so it's not a substitute for the exports+deps half of the requirement. No 2026 entrant surfaced in search that credibly beats knip on scope; the discovery search itself (["knip vs unimported dead code detection 2026"](https://www.pistack.xyz/posts/2026-06-19-dead-code-detection-tools-knip-ts-prune-vulture-unimported/)) treats knip as the reference point other tools are compared against, not a peer among equals.
 
 **Config cost for an app with unknown build tool/monorepo status is low, not zero.** Knip ships 182 plugins ([knip.dev/reference/plugins](https://knip.dev/reference/plugins)) covering Vite, webpack, Vitest, ESLint, TanStack Router, and most mainstream tooling, auto-enabled by detecting config files and `package.json` dependencies — so whichever build tool and test runner this app turns out to use, knip likely needs no manual plugin wiring for it. No React-specific, Zustand-, xstate-, or mqtt.js-specific plugin exists or is needed: those are plain library imports that knip's core file/export/dependency graph already walks without a plugin. Monorepo support (workspace-aware analysis) exists as a documented first-class feature, so the app's unresolved monorepo-or-single-package status doesn't gate adoption — it changes one config block, not the tool choice. `npx knip` runs zero-config for a baseline pass; getting to a clean, low-noise CI gate is where real config time goes.
+
+> **2026-08-14 update (post-draft, pre-acceptance) — the layout fact lands, and half of
+> the paragraph above is wrong.** The repo is a **pseudo-monorepo**: package-like
+> directories with no per-directory package.json (facts/app-profile.md). Knip's
+> workspace mode keys strictly on manifests — "Knip uses the term workspace exclusively
+> to indicate a directory that has a package.json"
+> ([Monorepos & Workspaces](https://knip.dev/features/monorepos-and-workspaces)) — so
+> the `workspaces` block, the `--workspace` filter, and per-workspace dependency
+> reporting **never engage here**, and package-less directories cannot be declared as
+> workspaces under any config. The sanctioned shape for this exact layout is knip's
+> [Integrated Monorepos](https://knip.dev/features/integrated-monorepos) mode ("a single
+> `package.json`, but consist of multiple projects… an integrated monorepo is a single
+> workspace"): flat top-level `entry`/`project` globs covering every directory, which
+> must be hand-authored and kept in sync as directories are added.
+>
+> The adopt call **stands** — repo-wide unused files, exports, and dependencies all
+> still work, and no competing tool does better here. What is lost is a capability the
+> draft implied: with one dependency list there is nothing to attribute a dependency
+> *to*, so knip cannot report that one directory imports a dependency morally owned by
+> another. Knip's docs are explicit that this finding class needs per-directory
+> manifests ("list all dependencies in each consuming `package.json`, allowing Knip to
+> do fine-grained reporting"). That is **structurally unavailable**, not merely
+> unconfigured — and it is exactly the cross-directory drift the agentic threat model
+> cares about, so it lands on the boundary-enforcement tool (dependency-cruiser and the
+> existing oxlint `no-restricted-imports` layering rule) rather than on knip. Track 0100
+> owns that argument.
 
 **Bus factor is the one clear weakness.** Knip is maintained by a single person, Lars Kappert ([@webpro](https://github.com/webpro)), and [GitHub Sponsors data](https://github.com/sponsors/webpro) shows a monthly aggregated average around $520 — thin funding for a tool this widely depended on. Release cadence and issue responsiveness are currently strong (14 open issues at last check, near-weekly releases), so there's no near-term maintenance red flag, but a CI gate this load-bearing carries real single-maintainer risk that the two archived predecessors (each also effectively single-maintainer) illustrate isn't hypothetical.
 
@@ -90,6 +116,36 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 **eslint-plugin-boundaries** — License: strong, MIT. Maintenance health: strong, release 5 days pre-access, active churn. TypeScript fit: strong, mature `eslint-import-resolver-typescript` integration. Integration cost: adequate, fits the existing ESLint-in-CI lane cleanly but adds full ESLint-AST cost since oxlint is primary; the oxlint-native path is alpha. Output quality: adequate, standard ESLint messages, no graph output. Escape hatch: strong, per-rule allow/disallow policy is ESLint-disable-able like any rule the team already knows.
 
 **sheriff** — License: strong, MIT. Maintenance health: weak, 11-month release gap and high open-issue-to-star ratio on bus-factor-1. TypeScript fit: adequate, TS-native zero-dependency config, but that same minimalism is why external-package gating was never built. Integration cost: weak, cannot express the required invariant at all — a second tool would still be needed. Output quality: adequate, readable `verify`/`export` output for internal violations only. Escape hatch: weak, no external-dependency concept to escape from.
+
+> **2026-08-14 update (post-draft, pre-acceptance) — the layout raises the stakes here
+> more than anywhere else in this report.** With one root package.json and no
+> workspaces, the package manager enforces **nothing** about which directory may import
+> what: every cross-directory import is a bare relative or tsconfig-aliased path, and
+> dependency-cruiser's own `aliased-workspace` dependency type (which fires only on real
+> workspace imports) can never appear in this repo. So the directory-to-directory rule
+> is not a secondary nicety alongside the external-package choke point — it is the
+> **only** backstop that exists, and it now also has to cover the cross-directory
+> dependency drift knip structurally cannot see (see the knip update above). Both halves
+> stay expressible in dependency-cruiser's regex-over-resolved-paths engine, which needs
+> no manifest and dealiases through `tsConfig`.
+>
+> Two corrections to this section's framing, both owed before acceptance. First,
+> **sheriff was eliminated for the right reason but not the one a reader might infer**:
+> it runs fine on plain directory globs with no package.json, so "no package boundaries"
+> was never its weakness; its disqualifier remains, unchanged, that it cannot gate an
+> external npm package. Second, and more important, **this section reads as a blank
+> slate and is not one**: oxlint `no-restricted-imports` is already the program's
+> adopted layering mechanism under D-0002 and is load-bearing in three accepted tracks
+> (D-0010, D-0015, D-0016), with D-0020 recording its one confirmed silent-failure mode.
+> A dependency-cruiser adoption must therefore argue what it *adds* over that incumbent
+> — replace it, or supplement it, and how the two avoid drifting apart — rather than
+> assuming the field is empty. That argument belongs in this report before acceptance,
+> or explicitly in track 0100.
+>
+> Sequencing note that couples this area to the TypeScript work: dependency-cruiser
+> resolves aliases through `tsConfig` (`paths`/`baseUrl`), and the type-aware lint lane
+> requires removing `baseUrl` entirely (see track 0100). Those two migrations touch the
+> same file and must be sequenced together, not owned separately.
 
 ### 3. Test-lane network mocking — MSW (REST: adopt; MQTT: skip)
 
@@ -168,6 +224,25 @@ files. The strictness question also goes to the app owner as an intake item.
 > [0100-type-strictness](../0100-type-strictness/research-plan.md) (D-0021), which now
 > owns this design. This area's direct-adopt of type-coverage stands as an input to
 > 0100, not a finished wiring.
+>
+> **Second update, same date — the pseudo-monorepo layout sharpens the problem and
+> supplies a lever.** type-coverage's granularity was never package-keyed; it is
+> **tsconfig-keyed**: `-p/--project` takes exactly one tsconfig, and there is no
+> `--group-by`, no glob form of `-p`, and no workspace concept in the docs. Under one
+> root tsconfig that yields a single whole-repo percentage — precisely the gameable
+> average this program's threat model warns about, where a clean directory and a swamp
+> directory cancel out and the number is unactionable. Two routes to a per-directory
+> ratchet, both net-new work the draft did not cost: per-directory tsconfigs plus a
+> hand-maintained list of `-p` invocations, or a small script over
+> [`type-coverage-core`](https://www.npmjs.com/package/type-coverage-core) (same 2.30.1
+> release) calling `lint(project, { fileCounts: true })` for per-file
+> correct/total counts and bucketing by directory prefix
+> ([source](https://github.com/plantain-00/type-coverage/blob/master/packages/core/src/core.ts)).
+> The per-file data exists in the library; only the CLI lacks the grouping. Track 0100
+> owns the choice. Noted for that track: **Biome**, already in-stack under D-0011,
+> natively expresses per-directory differentiation through glob `includes` in
+> [`overrides`](https://biomejs.dev/reference/configuration/) with no manifest needed —
+> a capability neither type-coverage nor size-limit has.
 
 **Rubric**
 
@@ -354,15 +429,26 @@ for exactly that); D-0011 (no SonarSource packages appeared in any shortlist); D
 spike questions below are pre-scoped for the spike harness).
 
 **Consolidated assumptions** (each area declared its own; the canonical list, per the
-critic): build tool assumed Vite (gates React Compiler recipe; eliminated rsdoctor);
-monorepo-or-single-package assumed single-or-simple-workspace (knip/type-coverage/
-size-limit config shape); Node assumed ≥20 (knip engines `^20.19.0 || >=22.12.0`, MSW
-`>=18`); test framework assumed vitest (intake item g, unchanged); React version
-unknown (intake item i — React Compiler needs `react-compiler-runtime` below 19); TS
-version ≥4.8 and strictness posture assumed modern-strict-ish (drives the ratchet
-design; now an intake item); CI provider unknown (dependency-cruiser and OSV-Scanner
-output-format choices); the app judged an internal product, not a redistributed library
-(why `@size-limit/time` is skipped).
+critic). **Three have since resolved into facts** (2026-08-14, facts/app-profile.md) and
+are struck through here rather than deleted, so the survey's reasoning stays auditable:
+~~monorepo-or-single-package assumed single-or-simple-workspace~~ → **pseudo-monorepo**
+(re-verified: see the knip and type-coverage updates above); ~~React version unknown~~ →
+**18.3.1**; ~~TS version ≥4.8 and strictness posture assumed modern-strict-ish~~ → **TS
+5.9.3, very loose** (moved to track 0100). Still assumptions: build tool assumed Vite
+(gates the React Compiler recipe; eliminated rsdoctor — the one genuinely open gate,
+intake item a); Node assumed ≥20 (knip engines `^20.19.0 || >=22.12.0`, MSW `>=18`);
+test framework assumed vitest (intake item g, unchanged); CI provider unknown
+(dependency-cruiser and OSV-Scanner output-format choices); the app judged an internal
+product, not a redistributed library (why `@size-limit/time` is skipped).
+
+**One consequence of the layout that cuts across every disposition here**: with no
+manifest graph, no workspace-aware CI fan-out (Nx/Turborepo/lerna "affected package"
+selection) has anything to discover. Every gate this report recommends — knip,
+dependency-cruiser, type-coverage, size-limit, OSV-Scanner — plus the accumulating
+ESLint-in-CI lane (sonarjs from 0020, three hooks plugins from 0040, jsx-a11y here)
+runs **full-repo on every commit**, and any per-directory scoping is a hand-maintained
+list rather than a derived one. That is a compounding cost no single area owns; it is
+flagged here and belongs in whichever track takes the unified-gate question.
 
 ## What a spike would validate
 

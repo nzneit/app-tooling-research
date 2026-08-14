@@ -1,6 +1,48 @@
 # 0100-type-strictness — research plan
 
-**Status**: draft
+**Status**: draft — revision pending (see the note below); do not survey from this
+version
+
+> **2026-08-14 — this draft has known defects; a revision is queued on two scope calls.**
+> An adversarial review found two critical and six important defects, and a subsequent
+> layout-fact verification invalidated more. Recorded here so nobody surveys from a stale
+> plan:
+>
+> - **Key question 1's "per-directory tsconfig layering" is not viable and must be
+>   dropped.** Plain `tsc` searches *upward* from the invocation directory for one
+>   config and never descends, so a nested `tsconfig.json` is inert for a root CI
+>   typecheck — while VS Code, which walks upward from each *open file*, does honor it.
+>   That is a silent editor/CI split-brain, not a layering mechanism. **Project
+>   references** are the credible per-directory mechanism (they key on tsconfig, never
+>   package.json, so the pseudo-monorepo layout is no obstacle), at the cost of
+>   `composite: true`, forced declaration emit, and `tsc -b` build ordering.
+> - **Key question 4 is stale in both directions.** oxlint's type-aware lane is stable,
+>   not experimental, and covers 59 of 61 typescript-eslint type-aware rules — including
+>   the entire `no-unsafe-*` family — so the question's disjunction has no true branch.
+>   It is gated on TypeScript 7 compatibility (7.0.2 is GA as of 2026-07-08; the app is
+>   on 5.9.3), but `oxlint-tsgolint` bundles its own typescript-go engine, so the gate
+>   is **tsconfig compatibility, not a compiler-version bump** — concretely, `baseUrl`
+>   was removed in TS 7 and is reported as an error. See intake item d.
+> - **The threat model omits its dominant failure mode**: an agent editing the
+>   *enforcement artifacts themselves* — tsconfig flags, allowlists, stored thresholds,
+>   committed baselines, lint `overrides`, and in this layout the single root
+>   `package.json` `scripts` block, where one edit blunts every gate at once. D-0020 is
+>   this program's confirmed precedent. Also missing: declaration-site widening (moving
+>   a field to `unknown` *raises* type-coverage while changing nothing), `as unknown as
+>   T`, types that compile but lie, and laundering through excluded paths.
+> - **Key question 8 is unanswerable here** (it asks for a measurement against the
+>   inaccessible app repo, D-0004) and re-derives a branch already resolved.
+> - **The rubric silently redefines "Escape hatch"** away from the spec's meaning (exit
+>   cost), breaking cross-track comparability.
+> - **Missing candidates**: ESLint core bulk suppressions (sidecar file plus
+>   `--prune-suppressions`), Biome (already in-stack under D-0011, and the only tool
+>   here that expresses per-directory differentiation without a manifest), and
+>   oxlint-native `ban-ts-comment`.
+>
+> Open scope calls for the user, which the revision waits on: (1) how far the TypeScript
+> 7 question belongs in this track versus its own; (2) whether to add a tenth,
+> track-specific rubric criterion for suppression auditability, which would deviate from
+> the spec's single shared rubric and want a ledger entry.
 
 ## Goal
 
