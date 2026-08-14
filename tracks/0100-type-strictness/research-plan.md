@@ -39,10 +39,65 @@ version
 >   here that expresses per-directory differentiation without a manifest), and
 >   oxlint-native `ban-ts-comment`.
 >
+> **2026-08-14, later — the `@appname/*` alias fact adds five verified failure modes to
+> the threat model, four of which need no adversarial intent at all.** Internal imports
+> are scoped-alias specifiers (facts/app-profile.md). These belong in the revised plan's
+> threat model and are recorded here so they survive until it is written:
+>
+> 1. **The alias table is an unwatched enforcement artifact.** A boundary ban keyed to
+>    a specifier (`@appname/transport/**`) is defeated by adding one new `paths` entry
+>    pointing a second alias at the same directory — an edit to tsconfig, the bundler
+>    alias, or the vitest alias, none of which read as policy. They read as wiring, so
+>    they do not attract enforcement-grade review the way a lint config does. This is
+>    the "agent edits the enforcement artifacts" class, extended to files nobody
+>    classified as enforcement.
+> 2. **Renaming a directory silently disables both layers at once.** oxlint specifier
+>    patterns and dependency-cruiser resolved-path regexes are *both* keyed to the
+>    directory name. After a rename, each matches nothing — no error, no CI failure, no
+>    signal, just a ban that has quietly stopped covering the code it named. Because the
+>    two layers share this one weakness, the defense-in-depth pairing fails together,
+>    and an ordinary "rename for clarity" is a lower-effort way to disable enforcement
+>    than any deliberate evasion.
+> 3. **Editor auto-import evades specifier bans by default.** The TypeScript language
+>    service picks relative-vs-alias specifiers by `importModuleSpecifierPreference`,
+>    which defaults to *shortest* — so ordinary autocomplete, and any agent tooling
+>    built on the same language server, will spontaneously emit `../../transport/x`
+>    where convention says `@appname/transport/x`. That is exactly the string form a
+>    specifier-keyed ban misses. The evasion therefore arrives organically and often,
+>    with no bad actor. Pinning the setting repo-wide, or pairing every specifier ban
+>    with a relative-path ban, is the candidate mitigation.
+> 4. **New directories fail open.** Because oxlint `overrides` replace rather than merge
+>    (the D-0020 mechanism), a directory created after the fact matches no existing
+>    override glob and inherits no boundary bans. In a repo where agents create modules
+>    often, the default state of new code is *unenforced*, not *denied* — the inverse of
+>    what a boundary policy should do.
+> 5. **Glob depth**: in gitignore-style groups `*` does not cross `/`, so
+>    `@appname/transport/*` silently misses `@appname/transport/ws/backoff`. Bans need
+>    `**`, and the drift test D-0020 mandates should assert it.
+>
+> Also settled for the revision: **the `baseUrl` migration is two problems, not one.**
+> For the alias mapping itself it is a no-op — with `baseUrl: "."` the `paths` targets
+> already resolve relative to that directory, so deleting the line changes nothing. The
+> real hazard is `baseUrl`'s second role as a bare-specifier fallback root: today
+> `import 'blah.js'` can resolve to `./src/blah.js`, and after removal it may not fail
+> loudly but instead **silently retarget to a same-named real package in node_modules**
+> ([TypeScript#62207](https://github.com/microsoft/TypeScript/issues/62207)). Detection
+> recipe: step through TypeScript 6.0 *without* `"ignoreDeprecations": "6.0"` first —
+> every fallback-dependent import then surfaces as a deprecation error, yielding an
+> exhaustive list before 7.0. Note also that the bundler resolvers mirror baseUrl, so
+> this breaks tsc, build, and tests together rather than in isolation.
+>
+> Two resolution facts still need a fixture test rather than a doc citation: whether
+> oxlint's **core** (non-type-aware) import rules read tsconfig `paths` at all is
+> undocumented, and tsgolint's `paths` support is a strong inference from its
+> typescript-go basis, not a documented guarantee.
+>
 > Open scope calls for the user, which the revision waits on: (1) how far the TypeScript
-> 7 question belongs in this track versus its own; (2) whether to add a tenth,
-> track-specific rubric criterion for suppression auditability, which would deviate from
-> the spec's single shared rubric and want a ledger entry.
+> 7 question belongs in this track versus its own — the evidence now favors splitting
+> it, keeping the bounded `baseUrl` migration here and treating a `typescript` 7.x bump
+> as separate and ecosystem-gated; (2) whether to add a tenth, track-specific rubric
+> criterion for suppression auditability, which would deviate from the spec's single
+> shared rubric and want a ledger entry.
 
 ## Goal
 

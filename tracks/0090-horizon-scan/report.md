@@ -71,6 +71,30 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 > cares about, so it lands on the boundary-enforcement tool (dependency-cruiser and the
 > existing oxlint `no-restricted-imports` layering rule) rather than on knip. Track 0100
 > owns that argument.
+>
+> **Second update, same date — the alias fact, and it lands better than feared.**
+> Internal imports are written `@appname/path/to/thing`, which appears nowhere in
+> package.json, raising the prospect that knip's unlisted-dependency check would flag
+> every internal import as an undeclared package. It does not: knip reads
+> `compilerOptions.paths` automatically as core behavior, not via the TypeScript plugin
+> — "Knip automatically includes `compilerOptions.paths` from the TypeScript
+> configuration" ([configuration reference](https://knip.dev/reference/configuration#paths)).
+> A specifier that resolves through `paths` becomes an ordinary internal graph edge and
+> never reaches the unlisted-dependency check. The documented false-positive floods
+> ([#280](https://github.com/webpro-nl/knip/issues/280),
+> [#381](https://github.com/webpro-nl/knip/issues/381)) arise where an alias crosses a
+> *workspace* boundary in a real multi-manifest monorepo — a boundary this repo does not
+> have.
+>
+> The adopt call therefore stands, but downgrade the claim from "near-zero config" to
+> "pin the tsconfig and verify": run knip with an explicit `--tsConfig ./tsconfig.json`
+> rather than relying on auto-discovery, since any alias defined in a non-root tsconfig
+> would go unresolved and reintroduce the flood. Two cautions for the agentic threat
+> model: any partial resolution gap (an uncovered directory, a dynamic import) surfaces
+> as a finding indistinguishable from a genuinely missing package, and the sanctioned
+> remedy — `ignoreDependencies: ["@appname/.*"]` — is itself a one-line blanket
+> suppression that would silence real undeclared-dependency findings across the whole
+> scope. Document it as a last resort; do not pre-enable it.
 
 **Bus factor is the one clear weakness.** Knip is maintained by a single person, Lars Kappert ([@webpro](https://github.com/webpro)), and [GitHub Sponsors data](https://github.com/sponsors/webpro) shows a monthly aggregated average around $520 — thin funding for a tool this widely depended on. Release cadence and issue responsiveness are currently strong (14 open issues at last check, near-weekly releases), so there's no near-term maintenance red flag, but a CI gate this load-bearing carries real single-maintainer risk that the two archived predecessors (each also effectively single-maintainer) illustrate isn't hypothetical.
 
@@ -146,6 +170,45 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 > resolves aliases through `tsConfig` (`paths`/`baseUrl`), and the type-aware lint lane
 > requires removing `baseUrl` entirely (see track 0100). Those two migrations touch the
 > same file and must be sequenced together, not owned separately.
+>
+> **Third update, same date — the alias fact answers the "what does dependency-cruiser
+> add" question above, and the answer is *additive*, not either/or.** Internal imports
+> are written `@appname/path/to/thing` (facts/app-profile.md). The two tools match at
+> different layers, and that difference is the whole argument:
+>
+> - **oxlint `no-restricted-imports` matches the literal specifier string** and performs
+>   no module resolution at all — confirmed against
+>   [oxlint's rule docs](https://oxc.rs/docs/guide/usage/linter/rules/eslint/no-restricted-imports),
+>   whose own example (`{"patterns": [{"regex": "@app/(api|enums).*"}]}`) is this exact
+>   shape. So `@appname/<dir>/**` boundary bans work today, need zero tsconfig, and are
+>   completely unaffected by the `baseUrl` removal. This stays the primary lane: already
+>   adopted, already D-0020-hardened, in the fast linter.
+> - **dependency-cruiser matches the *resolved* path** (`to: { path: "^src/transport" }`,
+>   never the specifier), per its
+>   [rules reference](https://github.com/sverweij/dependency-cruiser/blob/main/doc/rules-reference.md).
+>   It tracks `aliased-tsconfig-paths` and `aliased-tsconfig-base-url` as **distinct**
+>   dependency types, which implies paths-resolution does not hinge on `baseUrl` — an
+>   inference to smoke-test against the real tsconfig, not yet a confirmed fact.
+>
+> Therefore dependency-cruiser earns its place on two grounds oxlint cannot cover, and
+> should be scoped to exactly those rather than duplicating the ban list. **(a) Evasion
+> backstop**: because oxlint compares strings, `import '../../transport/x'` evades a ban
+> on `@appname/transport/**` while resolving to the identical file; dependency-cruiser
+> sees the same resolved target either way. **(b) Graph-shaped checks**: `circular`,
+> `reachable` (transitive "must never reach"), and `orphan` (dead files), plus graph
+> output. `no-restricted-imports` is a single-import-statement matcher with no module
+> graph at all, so this is not a duplicated capability. What dependency-cruiser does not
+> add: speed or inline diagnostics (separate CLI, separate config), and its
+> tsconfig-paths resolver has a history of edge-case bugs
+> ([#398](https://github.com/sverweij/dependency-cruiser/issues/398),
+> [#99](https://github.com/sverweij/dependency-cruiser/issues/99)), so it is less
+> battle-tested than a pure string match.
+>
+> **One correction to carry into any rule authoring, D-0020 in spirit**: in
+> gitignore-style `group` globs, `*` does **not** cross `/`. A ban written
+> `@appname/transport/*` catches `@appname/transport/client` and silently misses
+> `@appname/transport/ws/backoff`. Boundary bans must use `**`. This is the same class
+> of silent false negative D-0020 exists to prevent, and it deserves the same drift test.
 
 ### 3. Test-lane network mocking — MSW (REST: adopt; MQTT: skip)
 
