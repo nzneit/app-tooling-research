@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** Wave 2 accepted (D-0015, D-0016) — next: schedule spikes or the 0090 horizon scan.
+> **Frontier:** Wave 3 in progress — spike harness + 0060/0070 spikes (D-0017).
 
 ## How it works
 
@@ -20,6 +20,13 @@ report drafted → accepted`; `deferred` marks a track parked until scheduled. A
 recorded as a `D-####` entry in [DECISIONS.md](DECISIONS.md). Questions only the user can
 answer go through dated files in `intake/`. Run `node scripts/check-docs.ts` before
 committing.
+
+Accepted tracks may run **spikes**: standalone, exact-pinned npm packages under
+`tracks/<track>/spikes/<slug>/`, scaffolded by `node scripts/new-spike.ts <track-dir> <slug>`
+and isolated per the [spike harness spec](docs/superpowers/specs/2026-08-14-spike-harness-design.md).
+Each spike designs its interfaces first (`design.md`, per the vendored
+[codebase-design skill](.claude/skills/codebase-design/SKILL.md)) and records go/no-go results
+in `findings.md` — the durable artifact.
 
 ## Tracks
 
