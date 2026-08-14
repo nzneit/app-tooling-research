@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** Wave 2 surveying (0060, 0070) — next: run both surveys and draft reports.
+> **Frontier:** 0060 report drafted — next: 0070 survey and report.
 
 ## How it works
 
@@ -30,6 +30,6 @@ committing.
 | 0030-duplication-detection | Near-duplicate code detection and de-duplication reporting | accepted |
 | 0040-hooks-linting | React hooks anti-pattern lint coverage beyond the basics | accepted |
 | 0050-logging | Config- and runtime-controllable logging facade (sinks, levels, throttling) | accepted |
-| 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | surveying |
+| 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | report drafted |
 | 0070-state-concurrency | Composable Zustand+xstate patterns; race-condition prevention (Wave 2 — starts from 0010's accepted report) | surveying |
 | 0090-horizon-scan | "Anything else" discovery session | deferred |
