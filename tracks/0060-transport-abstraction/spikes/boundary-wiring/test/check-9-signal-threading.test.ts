@@ -13,12 +13,19 @@
 //
 // fetch is injected at the boundary's FetchLike port, so "the underlying fetch
 // aborted" is observed on the actual AbortSignal the transport received.
+//
+// Two failure modes are pinned at the bottom of this file, in order:
+//   1. design.md's literal binding does not COMPILE against orval's call site
+//      (TS2353, excess property 'signal') — `_designLiteralBindingDoesNotEvenCompile`
+//   2. the real hazard is one step later: widen the request type to get past
+//      that error, keep design.md's `fetcher(req, opts)` body, and the signal is
+//      dropped silently at runtime — the "post-widening hazard" test.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { QueryClient } from "@tanstack/react-query";
-import type { FetchLike } from "../src/index.js";
+import type { BoundaryFetcher, FetchLike } from "../src/index.js";
 import {
   memoryBrokerAdapter,
   scriptedFetchAdapter,
@@ -135,15 +142,23 @@ describe("signal threading through orval's generated react-query client", () => 
     await expect(listPlants()).resolves.toEqual(validPlantList);
   });
 
-  // The consequence, made concrete: design.md's binding reads `opts.signal`.
-  // Written that way against this generated output it compiles, generates and
-  // runs — and cancellation silently does nothing.
-  it("shows design.md's literal one-line binding would be a silent no-op", async () => {
+  // THE HAZARD, one step past the type error.
+  //
+  // design.md's literal binding does not build against this generated output at
+  // all — see `_designLiteralBindingDoesNotEvenCompile` below (TS2353). The
+  // danger is what a developer does next: hit the excess-property error, widen
+  // the request parameter so it builds, and forward `opts` exactly as design.md
+  // writes it. From that moment the signal is dropped, silently and at runtime,
+  // with nothing left to complain. This test IS that post-widening state:
+  // `orvalRequest` is a pre-built variable, so no excess-property check fires —
+  // which is precisely what widening the type achieves.
+  it("post-widening hazard: once the request type is widened, the signal is dropped", async () => {
     const { calls } = rig([
       { method: "GET", url: "/v1/plants", status: 200, body: validPlantList, delayMs: 30 },
     ]);
     const controller = new AbortController();
-    // Exactly the object orval hands the mutator …
+    // Exactly the object orval hands the mutator, held in a variable so the
+    // excess-property check does not fire — i.e. the widened world.
     const orvalRequest = { url: "/v1/plants", method: "GET" as const, signal: controller.signal };
     // … forwarded the way design.md writes it: `fetcher(req, opts)`, opts undefined.
     const pending = boundary()
@@ -178,3 +193,45 @@ describe("signal threading through orval's generated react-query client", () => 
     expect(fetchClient).toContain("data: Conflict status: 409");
   });
 });
+
+// ── Compile-level evidence: design.md's binding does not even build ──────────
+//
+// `tsc --noEmit` IS this assertion. design.md sketches
+//
+//     export const customInstance = <T>(req, opts?) => boundary.fetcher<T>(req, opts);
+//
+// whose request parameter is `Parameters<BoundaryFetcher>[0]` — a type with no
+// `signal`. orval's generated call site passes a FRESH object literal carrying
+// `signal`, so TypeScript's excess-property check rejects it outright:
+//
+//     TS2353: Object literal may only specify known properties, and 'signal'
+//     does not exist in type '{ url: string; method: ...; params?: ...; }'.
+//
+// That type error is the cheap guard, and it is the honest version of this
+// spike's earlier claim (the binding does NOT silently run — it fails to
+// build). The expensive failure is what comes after: widen the parameter to get
+// past this error and the signal is dropped at runtime instead, which is what
+// the "post-widening hazard" test above demonstrates. The @ts-expect-error
+// below fails the build if TypeScript ever stops catching the first step.
+
+type BoundaryRequest = Parameters<BoundaryFetcher>[0];
+
+/** design.md's binding, verbatim in its typing: no `signal` on the request. */
+declare function designLiteralInstance<T>(
+  req: BoundaryRequest,
+  opts?: { signal?: AbortSignal },
+): Promise<T>;
+
+export function _designLiteralBindingDoesNotEvenCompile(sig: AbortSignal): void {
+  void designLiteralInstance<unknown>(
+    {
+      url: "/v1/plants",
+      method: "GET",
+      // @ts-expect-error TS2353 — 'signal' does not exist in the request type,
+      // so orval's generated call site does not type-check against design.md's
+      // binding as written.
+      signal: sig,
+    },
+    undefined,
+  );
+}

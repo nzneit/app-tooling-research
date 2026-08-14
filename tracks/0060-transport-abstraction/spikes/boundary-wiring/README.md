@@ -28,7 +28,7 @@ Both legs of the `transport-boundary` interface described in [design.md](design.
 ## Run
 
 ```
-npm ci && npm test          # 97 tests, 17 files
+npm ci && npm test          # 99 tests, 17 files
 npm run typecheck           # tsc --noEmit; the Register + two-wire checks ARE typecheck
 npm run generate            # regenerate the orval output (should be a no-op diff)
 ```

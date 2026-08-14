@@ -16,10 +16,23 @@
 //       customInstance<PlantList>({ url: `/v1/plants`, method: 'GET', params, signal }, options);
 //
 // The second argument is orval's `SecondParameter` (per-call request options
-// supplied by the caller), not the signal. So the literal one-liner compiles,
-// generates, runs — and silently drops cancellation, which is exactly the
-// "silent no-op" failure the report warned about. The binding must read
-// `req.signal`. See findings.md, check "Signal threading".
+// supplied by the caller), not the signal.
+//
+// Two consequences, in order — the second is the dangerous one:
+//
+//   1. The literal one-liner does not COMPILE against this call site. Its
+//      request parameter is `Parameters<BoundaryFetcher>[0]`, which has no
+//      `signal`, and orval passes a FRESH object literal — so TypeScript's
+//      excess-property check rejects it with TS2353. TypeScript catches the
+//      naive form for free.
+//   2. The hazard is what happens next: widen the request parameter so it
+//      builds, keep the `fetcher(req, opts)` body, and cancellation is dropped
+//      silently at runtime with nothing left to complain about. That is the
+//      "silent no-op" the report warned of, one step past the type error.
+//
+// So the binding must both widen the type AND read `req.signal` — widening
+// alone is the trap. See findings.md, check "Signal threading", and
+// test/check-9-signal-threading.test.ts, which pins both steps.
 
 import type { BoundaryFetcher } from "../../src/index.js";
 import { boundary } from "../transport.js";

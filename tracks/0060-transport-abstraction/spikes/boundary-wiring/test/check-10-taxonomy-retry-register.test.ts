@@ -95,8 +95,13 @@ describe("declared vs undeclared (the class-3 / class-4 split)", () => {
     const err = await get("/v1/plants");
     expect(isReasonCode(err, "GET /v1/plants", 422)).toBe(true);
     expect(err).toMatchObject({ class: 3, status: 422, body: { fields: ["limit"] } });
-    // Per-status really means per-status: the same body under 409 is a class-2
-    // contract violation, because the 409 schema requires `code`.
+    // What the per-status lookup buys, stated accurately: the 422 body reaches
+    // the caller WITH `fields`. The same body under the 409 schema would NOT be
+    // a contract violation — orval's generated zod objects strip unknown keys,
+    // so it would parse as class 3 with `fields` silently removed. Per-status
+    // schemas are therefore what preserves the body, not what rejects the
+    // mismatch. See findings.md, "orval's generated zod schemas STRIP unknown
+    // response fields".
   });
 
   it("class 2: a DECLARED status whose body FAILS its per-status schema", async () => {
@@ -154,6 +159,51 @@ describe("declared vs undeclared (the class-3 / class-4 split)", () => {
     // I1: with no declared schema nothing can be validated, so nothing crosses —
     // a 2xx is not a loophole.
     expect((err as { raw: { declared: number[] } }).raw.declared).toEqual([]);
+  });
+
+  // ── Disclosure, asserted: what per-status validation does to unknown fields ──
+  //
+  // orval emits `zod.object({...})`, and a zod object STRIPS unknown keys by
+  // default. So the boundary does not merely validate the body — it rewrites
+  // it, and a field the server adds in a backward-compatible release never
+  // reaches the caller. Whether that is the wanted behaviour is a decision for
+  // the gate (strip vs passthrough); what is not acceptable is it being
+  // undocumented, so it is pinned here. See findings.md, Deviations.
+
+  it("STRIPS unknown fields from a validated 2xx body (zod object default)", async () => {
+    scripted([
+      {
+        method: "GET",
+        url: "/v1/plants",
+        status: 200,
+        body: {
+          plants: [{ id: "p1", name: "One", tempC: 1 }],
+          total: 1,
+          serverAddedField: "backward-compatible addition",
+        },
+      },
+    ]);
+    const ok = (await boundary().fetcher({ url: "/v1/plants", method: "GET" })) as object;
+    expect("serverAddedField" in ok).toBe(false);
+    expect(ok).toEqual({ plants: [{ id: "p1", name: "One", tempC: 1 }], total: 1 });
+  });
+
+  it("STRIPS unknown fields from a class-3 body too", async () => {
+    scripted([
+      {
+        method: "GET",
+        url: "/v1/plants",
+        status: 409,
+        body: { code: "E_CONFLICT", traceId: "abc-123" },
+      },
+    ]);
+    const err = (await get("/v1/plants")) as { body: object; raw: object };
+    expect(err).toMatchObject({ class: 3, status: 409 });
+    // The reason code survives; the correlation id the server sent does not.
+    expect(err.body).toEqual({ code: "E_CONFLICT" });
+    expect("traceId" in err.body).toBe(false);
+    // It is still recoverable from the evidence — `raw` is the pre-parse body.
+    expect(err.raw).toEqual({ code: "E_CONFLICT", traceId: "abc-123" });
   });
 
   it("matches path parameters against the contract's template", async () => {

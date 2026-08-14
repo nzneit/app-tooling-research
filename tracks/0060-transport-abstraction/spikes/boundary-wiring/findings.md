@@ -23,7 +23,7 @@ inferring from the installed package and otherwise falling back to zod 4 output;
 with `zod@4.4.3` installed it emitted zod-v4 API (`zod.int()`, `zod.enum([...])`),
 so zod 4 is the supported major and the one pinned.
 
-Suite: **97 tests, 17 files, all green**; `npm run typecheck` clean. The
+Suite: **99 tests, 17 files, all green**; `npm run typecheck` clean. The
 real-broker tests (aedes over ws + mqtt.js, in-process) close every server in
 `afterEach`; vitest exits 0 with no leaked handles across repeated runs.
 
@@ -31,10 +31,10 @@ real-broker tests (aedes over ws + mqtt.js, in-process) close every server in
 
 | Report check | Verdict | Evidence |
 |---|---|---|
-| **Signal threading (decisive for the REST seam)**: orval `client: 'react-query'` passes `context.signal` through the custom mutator into fetch | **go** | `test/check-9-signal-threading.test.ts` (5 tests) runs the **real generated client** (`app/api/generated/plants.ts`, orval 8.24.0, `client: 'react-query'`, `httpClient: 'axios'`, `override.mutator` → `app/api/mutator.ts`) over a **real** `QueryClient`. No React: orval emits query-options builders, so `queryClient.fetchQuery(getListPlantsQueryOptions())` exercises the same queryFn a `useQuery` hook would. `::GO: cancelling the query aborts the underlying fetch` — the injected `FetchLike` records the `AbortSignal` the transport actually received; it is not aborted while in flight, and `client.cancelQueries({queryKey})` flips it to `aborted === true`. `::resolves the validated body end to end through the generated client` covers the success path, hook-free and standalone. Generated output is committed (`app/api/`, `contract/plants.openapi.json`, `orval.config.ts`). **One correction to design.md is required — see Deviations**: orval threads `signal` into the mutator's **first** argument (the request config), so the design's literal one-liner `(req, opts) => boundary.fetcher(req, opts)` would drop it. `::shows design.md's literal one-line binding would be a silent no-op` proves the failure mode directly: aborting the caller's controller leaves the transport signal un-aborted and the request completes anyway. |
+| **Signal threading (decisive for the REST seam)**: orval `client: 'react-query'` passes `context.signal` through the custom mutator into fetch | **go** | `test/check-9-signal-threading.test.ts` (5 tests + a compile-time block) runs the **real generated client** (`app/api/generated/plants.ts`, orval 8.24.0, `client: 'react-query'`, `httpClient: 'axios'`, `override.mutator` → `app/api/mutator.ts`) over a **real** `QueryClient`. No React: orval emits query-options builders, so `queryClient.fetchQuery(getListPlantsQueryOptions())` exercises the same queryFn a `useQuery` hook would. `::GO: cancelling the query aborts the underlying fetch` — the injected `FetchLike` records the `AbortSignal` the transport actually received; it is not aborted while in flight, and `client.cancelQueries({queryKey})` flips it to `aborted === true`. `::resolves the validated body end to end through the generated client` covers the success path, hook-free and standalone. Generated output is committed (`app/api/`, `contract/plants.openapi.json`, `orval.config.ts`). **One correction to design.md is required — see Deviations**: orval threads `signal` into the mutator's **first** argument (the request config), so the design's literal one-liner `(req, opts) => boundary.fetcher(req, opts)` does not carry it. The failure arrives in **two steps**, both pinned. Step 1, compile time: the one-liner's request parameter is `Parameters<BoundaryFetcher>[0]`, which has no `signal`, and orval passes a **fresh object literal**, so TypeScript rejects the generated call site outright — `TS2353: Object literal may only specify known properties, and 'signal' does not exist in type '{url; method; params?; data?; headers?}'`. `_designLiteralBindingDoesNotEvenCompile` holds that as an `@ts-expect-error` (verified live: deleting the directive reproduces TS2353 at `check-9:230`, and `tsc` would flag it as unused otherwise). Step 2, and the actual hazard: widen the request parameter so it builds, keep design.md's `fetcher(req, opts)` body, and the signal is dropped **silently at runtime** with no diagnostic left. `::post-widening hazard: once the request type is widened, the signal is dropped` is exactly that state — the request is a pre-built variable, which is what widening achieves — and shows the caller's controller aborting while the transport signal stays `false` and the request completes anyway. |
 | Taxonomy-aware retry predicate (class 1 only) through TanStack Query | **go** | `test/check-10-taxonomy-retry-register.test.ts`, "taxonomy-aware retry through TanStack Query" (4 tests) — a `QueryClient` built by `app/query-client.ts` with `retry: retryOnlyTransient`, counting transport attempts at the port. Class-1 `network`: **4** attempts (the original + three retries). Class-2 contract violation: **1**. Class-3 reason code: **1**. Class-4 undeclared status: **1**. The class-2 row is the one that matters — TanStack's default would have retried it three times with backoff. |
 | Global `Register` error type compiles and narrows at call sites | **go** | Same file, `_registerNarrowsAtCallSites` — `tsc --noEmit` **is** the assertion. `declare module '@tanstack/react-query' { interface Register { defaultError: BoundaryError } }` lives in `app/query-client.ts`; the block then assigns `client.getQueryState(...)!.error` to a `BoundaryError` with no cast, narrows `class === 1` to read `reason` and `class === 3` to read `status`, and carries four `@ts-expect-error` lines that fail the build if they stop being errors (`class 1` has no `status`, `class 3` has no `reason`, there is no `class 5`, and the QueryCache `onError` tap rejects a bare `Error`). Typecheck reports no unused-directive errors, so every one of them is a live error today. |
-| REST leg: DECLARED vs UNDECLARED status (class 3 / class 4 / class 2 split) | **go** | `test/check-10-…::declared vs undeclared` (7 tests). The per-status schemas are **orval's generated zod** (`override.zod.generateEachHttpStatus: true` → `ListPlants409Response`, `ListPlants422Response`, …) wired into a declared-status table in `app/contract.ts`. A declared **409** whose body parses → class 3, `status: 409`, parsed body, **no** quarantine entry. A declared **422** validates against the 422 schema, not the 409 one (different shapes: `{code, detail?}` vs `{code, fields}`) — per-status really is per-status. A declared 409 whose body **fails** its schema → class 2 with real zod issues normalised into the shared `{path, message}` shape (`schemaPath: '#/code'`) + quarantine. A **2xx** body failing its schema → class 2, never a resolution. An **undeclared 418** → class 4 `undeclared-status` + quarantine, with `raw: {status: 418, declared: [200, 409, 422]}`. An **undeclared path** → class 4 even on a 200 (I1: with no declared schema nothing can be validated, so nothing crosses). Path params match the contract **template**, so `GET /v1/plants/{plantId}` is the endpoint identity and telemetry dedupKeys do not fragment one per plant id. |
+| REST leg: DECLARED vs UNDECLARED status (class 3 / class 4 / class 2 split) | **go**, with a disclosed caveat — validated bodies are **stripped** of unknown fields (Deviations) | `test/check-10-…::declared vs undeclared` (9 tests). The per-status schemas are **orval's generated zod** (`override.zod.generateEachHttpStatus: true` → `ListPlants409Response`, `ListPlants422Response`, …) wired into a declared-status table in `app/contract.ts`. A declared **409** whose body parses → class 3, `status: 409`, parsed body, **no** quarantine entry. A declared **422** validates against the 422 schema, not the 409 one, so its `fields` array reaches the caller intact — note that the 409 schema would also *parse* that body, stripping `fields`, so per-status schemas preserve the right fields rather than reject the wrong status's shape (see the stripping bullet under Deviations). A declared 409 whose body **fails** its schema → class 2 with real zod issues normalised into the shared `{path, message}` shape (`schemaPath: '#/code'`) + quarantine. A **2xx** body failing its schema → class 2, never a resolution. An **undeclared 418** → class 4 `undeclared-status` + quarantine, with `raw: {status: 418, declared: [200, 409, 422]}`. An **undeclared path** → class 4 even on a 200 (I1: with no declared schema nothing can be validated, so nothing crosses). Path params match the contract **template**, so `GET /v1/plants/{plantId}` is the endpoint identity and telemetry dedupKeys do not fragment one per plant id. |
 | Non-JSON ingress on the REST leg (ts-rest #789 lesson, I11) | **go** | `test/check-11-rest-non-json.test.ts` (10 tests) walks the full matrix **on 2xx and on non-2xx**, which is the column ts-rest #789 actually breaks in. `text/html` → class 4 `unknown-content-type` + quarantine with the HTML body retained (both statuses). Missing `content-type` → class 4 `unknown-content-type` (both). JSON content type with an unparseable body → class 4 `undecodable` + quarantine (both). JSON content type with an **empty** body → class 4 `undecodable` (both). `application/problem+json` on a declared 409 → decoded and validated normally → class 3, no quarantine: the JSON family is accepted, not just the exact string. `::never silently skips` asserts the shape of the bug directly — the non-JSON 2xx leaves as a rejection, never as a resolved value. |
 | Deduped four-class telemetry reaches a 0050 stub via the QueryCache `onError` tap | **go** | `test/check-12-telemetry-querycache.test.ts` (5 tests). The tap is design.md's usage sketch wired for real in `app/query-client.ts` (`new QueryCache({ onError: (e, q) => { if (isBoundaryError(e)) sink.recordQuery(e, q.queryKey) } })`) feeding the stub in `app/telemetry-sink.ts`. `::delivers all FOUR classes to the logging stub, each with its query key` — classes 2, 3, 4 from one rig and class 1 (transport failure) from another, each tagged with its query key; the retried class-1 attempts fold into **one** envelope. `::carries the design's TelemetryEvent envelope` — the record's envelope has exactly the five documented keys (`count`, `dedupKey`, `error`, `firstSeen`, `lastSeen`), `dedupKey === 'GET /v1/plants|c3:E_CONFLICT'`, `count: 1`, and `envelope.error` **is** the same object the tap saw (one error, two taps, no re-wrapping). `::dedupes repeats inside the window` — four failures produce four QueryCache taps but one leading-edge envelope, then a folded `count: 4` summary when `SimulatedClock.increment(60_000)` closes the window. `::feeds the SAME sink from the MQTT wildcard tap` — an unknown MQTT topic and an undeclared REST status land in the same sink in the same envelope shape, and only the REST one carries a query key. |
 | Coverage layers in this repo: oxlint `no-restricted-imports` overrides allow the ingress and ban `mqtt`/raw-client elsewhere | **go** | `test/check-13-layering-lint.test.ts` (6 tests) runs the **real oxlint 1.78.0** binary via `execFile` over `lint-fixtures/`, against two committed configs. `.oxlintrc.json`: the MQTT ingress fixture importing `mqtt` exits **0** with no diagnostics; feature code importing `mqtt` **and** the generated client exits **1** with two `eslint(no-restricted-imports)` diagnostics and the I5 help text; the clean feature exits 0. The load-bearing case — `lint-fixtures/ingress/mqtt-ingress.violation.ts`, inside the directory the override exempts — exits **1** with exactly two diagnostics (the generated client and a feature import) and **none** for `mqtt`: the allowance is granted without taking the other bans down with it. D-0002 holds: both rules are `no-restricted-imports`, no new toolchain. |
@@ -72,6 +72,35 @@ real-broker tests (aedes over ws + mqtt.js, in-process) close every server in
   intact: the ingress imports no generated code. Schemas are typed structurally
   (`ResponseSchema`, a `safeParse` shape), so nothing below the seam imports zod
   and orval's generated schemas satisfy it as shipped.
+- **orval's generated zod schemas STRIP unknown response fields, and that is
+  now part of what `rest.contract` means.** orval emits `zod.object({...})`, and
+  a zod object is strip-by-default: any property the schema does not declare is
+  **removed from the value the caller receives**. Verified on both paths —
+  `check-10::STRIPS unknown fields from a validated 2xx body (zod object
+  default)` (a server-added `serverAddedField` on a 200 never reaches the
+  caller) and `check-10::STRIPS unknown fields from a class-3 body too` (a
+  `traceId` alongside a declared reason code is removed from
+  `ReasonCodeError.body`; it survives only in `raw`, the pre-parse evidence).
+  Three consequences the gate must weigh before ratifying `rest.contract` into
+  design.md:
+  - **Backward-compatible server additions are invisible to callers** until the
+    contract is regenerated. That is either the point of a validating boundary
+    (nothing undeclared crosses, I1 taken literally) or a silent data loss,
+    depending on the deployment model — it is a deliberate choice, not a
+    detail, and zod offers all three modes (`strip` / `passthrough` / `strict`).
+  - **The boundary does not merely validate, it rewrites.** `fetcher` resolves
+    the schema's *output*, not the response body. `Validated<T>` therefore
+    brands a transformed value; any coercion or default in a generated schema
+    would ride the same path.
+  - **Per-status schemas discriminate less than they appear to.** The 422 body
+    `{code, fields}` parses cleanly against the 409 schema (`{code, detail?}`)
+    with `fields` stripped — so what the per-status lookup buys is *preserving
+    the right fields*, not *rejecting the wrong status's shape*. An earlier
+    comment in `check-10` claimed the mismatch would be a class-2 violation;
+    it would not, and the comment is corrected. `strict` mode would make the
+    discrimination real, at the cost of failing every forward-compatible
+    addition.
+
 - **An UNDECLARED endpoint is class 4 even on a 2xx.** With no declared schema
   there is nothing to validate against, and I1 says nothing unvalidated crosses
   the interface. So an unmatched path — or a matched path with an undeclared
@@ -87,12 +116,21 @@ real-broker tests (aedes over ws + mqtt.js, in-process) close every server in
   `httpClient: 'axios'` generates
   `customInstance<PlantList>({url, method, params, signal}, options)` — the
   signal is in the **first** argument and the second is orval's
-  `SecondParameter` (per-call request options). The literal one-liner compiles,
-  generates and runs while silently dropping cancellation. `app/api/mutator.ts`
-  destructures `signal` out of the request instead, and
-  `check-9::shows design.md's literal one-line binding would be a silent no-op`
-  keeps the trap asserted. **This is a one-line correction to the design's
-  sketch, not a change to any interface.**
+  `SecondParameter` (per-call request options). The failure has two steps, and
+  an earlier draft of these findings described only the second: **the literal
+  one-liner does not compile at all.** Its request parameter is
+  `Parameters<BoundaryFetcher>[0]`, which carries no `signal`, and orval's call
+  site passes a fresh object literal, so TypeScript's excess-property check
+  rejects it (TS2353) before anything runs. TypeScript catches the naive form
+  for free. **The hazard is one step later**: hit TS2353, widen the request
+  parameter so it builds, keep the `fetcher(req, opts)` body — and cancellation
+  is dropped silently at runtime with nothing left to complain. So the binding
+  must widen the type **and** read `req.signal`; widening alone is the trap.
+  `app/api/mutator.ts` does both, and `check-9` pins both steps
+  (`_designLiteralBindingDoesNotEvenCompile` for the type error,
+  `::post-widening hazard: once the request type is widened, the signal is
+  dropped` for the runtime one). **This is a one-line correction to the
+  design's sketch, not a change to any interface.**
 - **Where `signal` lands depends on `output.httpClient`, and the fetch
   convention is incompatible with `BoundaryFetcher` for a second reason.** The
   same contract generated with `httpClient: 'fetch'` (committed as
@@ -141,6 +179,14 @@ real-broker tests (aedes over ws + mqtt.js, in-process) close every server in
   narrower declaration made a real `ZodError` structurally unassignable.
   Segments are stringified into the shared `{path, message}` issue shape, so
   nothing downstream changed.
+- **Content-type matching is a substring test, not a media-type parse.** The
+  REST ingress accepts a body when `contentType.includes("json")`, which is what
+  makes the JSON family (`application/problem+json`) work without an allow-list.
+  It is also loose enough to accept nonsense like `text/html; charset=json-ish`.
+  Immaterial at spike scale — every content type in the check matrix is
+  classified correctly — but a shipping rule needs a real media-type parse
+  (type/subtype plus a `+json` structured-suffix check, parameters discarded)
+  rather than a substring match.
 - **Bench measured in Node, not a browser.** The report check asks for a real
   browser; this spike measures in Node v24.18.0 with the memory broker adapter.
   The measured path is the whole boundary pipeline; what Node omits is the
@@ -256,8 +302,10 @@ Concretely, for the accepted recommendation —
   needed**. What the spike adds is the condition attached to that go — the
   mutator must read `signal` off the request object, and the generation must use
   `httpClient: 'axios'`. Both are one-line facts, and both are now asserted, but
-  either one taken wrongly reproduces exactly the silent no-op the report warned
-  about.
+  either one taken wrongly reproduces the failure the report warned about —
+  though not in one step: the naive binding fails to compile (TS2353), and it is
+  the natural fix for *that* (widening the request type) which turns it into the
+  silent runtime no-op. Both steps are asserted in `check-9`.
 - **The caller-facing error surface really is three lines.** `retry:
   retryOnlyTransient`, the `Register` augmentation, and the QueryCache `onError`
   tap — all in `app/query-client.ts`, all exercised. The `Register` graft pays
@@ -269,7 +317,15 @@ Concretely, for the accepted recommendation —
   task makes. Without it the class-3/class-4 distinction is unimplementable, and
   with it both legs have the same shape: one declarative table, compiled once,
   driving routing + validation + taxonomy. It should be added to design.md's
-  `rest` config.
+  `rest` config — and the ratification carries **one substantive choice**: the
+  generated zod objects strip unknown fields by default, so `fetcher` resolves
+  the schema's *output*, not the response body. Ratify `strip` (nothing
+  undeclared crosses; backward-compatible server additions stay invisible until
+  the contract is regenerated), `passthrough` (additions survive, but
+  `Validated<T>` stops meaning "exactly the declared shape"), or `strict` (an
+  addition becomes a class-2 contract violation) — deliberately, rather than by
+  inheriting orval's default. Evidence for what the default does: the two
+  `check-10::STRIPS …` tests.
 - **The three ports earn their keep.** The give-up policy, the offline window
   and the pump bound are all walked *through the same interface callers use*,
   in microseconds, because `BrokerPort` and `ClockPort` have two adapters each.
