@@ -76,7 +76,14 @@ export type Wire =
 
 export interface IngressError extends Error {
   code: "unmatched-topic" | "dispatch-failed";
-  envelope: ValidatedMessage;
+  /**
+   * The message that failed — or `null` when the failure has no message of its
+   * own, i.e. a wire fan-out callback threw inside the shared run-to-completion
+   * mailbox (invariant 9). design.md types this `ValidatedMessage`; the spike
+   * widens it so a wire failure cannot masquerade as a real envelope in an
+   * `onError` log (recorded in findings.md).
+   */
+  envelope: ValidatedMessage | null;
   cause?: unknown;
 }
 

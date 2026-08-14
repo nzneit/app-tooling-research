@@ -30,9 +30,6 @@ export interface SpikeInternals {
 }
 
 const SEP = "\u0000";
-/** Stand-in envelope for failures with no message of their own (wire fan-out). */
-const EMPTY_ENVELOPE: ValidatedMessage = { topic: "", packetId: "", payload: undefined };
-
 interface StreamEntry {
   readonly id: string;
   readonly decl: StreamDecl<any>;
@@ -50,18 +47,26 @@ interface Withheld {
   readonly msg: ValidatedMessage;
   readonly entry: StreamEntry;
   readonly epoch: number;
+  readonly entity: string;
 }
 
 function makeIngressError(
   code: IngressError["code"],
-  envelope: ValidatedMessage,
+  envelope: ValidatedMessage | null,
   cause?: unknown,
 ): IngressError {
-  const err = new Error(`ingress: ${code} (${envelope.topic})`) as IngressError;
+  const where = envelope === null ? "wire fan-out, no message" : envelope.topic;
+  const err = new Error(`ingress: ${code} (${where})`) as IngressError;
   err.code = code;
   err.envelope = envelope;
   if (cause !== undefined) err.cause = cause;
   return err;
+}
+
+/** design.md's default onError: "dev-warn and continue". */
+function devWarn(error: IngressError): void {
+  const where = error.envelope === null ? "wire fan-out" : error.envelope.topic;
+  console.warn(`[state-kit] ${error.code} (${where})`, error.cause ?? error);
 }
 
 export function createStateKit(config: StateKitConfig): StateKit & SpikeInternals {
@@ -74,8 +79,20 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
   }
   for (const id of streamIds) {
     const decl = streams[id]!;
-    if ("query" in decl.dispatch && config.queryClient === undefined) {
-      throw new IngressConfigError(`stream '${id}' has a query target but no queryClient`);
+    if ("query" in decl.dispatch) {
+      if (config.queryClient === undefined) {
+        throw new IngressConfigError(`stream '${id}' has a query target but no queryClient`);
+      }
+      if (decl.dispatch.write !== undefined) {
+        // design.md honours `write` only for stamp-guarded, cancelQueries-preceded
+        // messages. This spike implements invalidate-don't-set only (Task 9 owns
+        // the stamped fast path), so a supplied `write` would be silently
+        // ignored — refuse it at the composition root instead.
+        throw new IngressConfigError(
+          `stream '${id}' declares dispatch.write, which this spike does not implement ` +
+            `(invalidate-don't-set only; the stamped write path lands with Task 9)`,
+        );
+      }
     }
   }
 
@@ -94,15 +111,18 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     gaps: 0,
   };
 
-  const onError = config.onError ?? (() => {});
+  const onError = config.onError ?? devWarn;
   const inspect = config.inspect;
-  const emit = (ev: IngressInspectionEvent): void => {
-    if (inspect !== undefined) inspect(ev);
+  /** Lazy: the event is only built when a tap is actually installed. */
+  const emit = (build: () => IngressInspectionEvent): void => {
+    if (inspect !== undefined) inspect(build());
   };
 
   // ── Registries ──────────────────────────────────────────────────────
   const dedupCapacity = config.dedupCapacity ?? 1024;
-  const seenPackets = new Map<string, true>(); // insertion-ordered LRU
+  // True LRU over a Map: insertion order is recency order because every hit
+  // re-inserts (see `touch`) and eviction takes the front.
+  const seenPackets = new Map<string, true>();
   const stampHighWater = new Map<string, number | bigint>();
   const epochOf = new Map<string, number>();
   const entityTopic = new Map<string, string>(); // invariant 4 declaration check
@@ -125,7 +145,8 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
           next();
         } catch (cause) {
           // A throwing wire callback must not strand the rest of the mailbox.
-          onError(makeIngressError("dispatch-failed", EMPTY_ENVELOPE, cause));
+          // envelope === null marks "no message of its own" (see IngressError).
+          onError(makeIngressError("dispatch-failed", null, cause));
         }
       }
     } finally {
@@ -135,18 +156,24 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
 
   // ── Pipeline stages ─────────────────────────────────────────────────
 
-  function remember(packetId: string): void {
+  /** Insert (or re-insert) at the recency end, then evict the least recent. */
+  function touch(packetId: string): void {
+    seenPackets.delete(packetId);
     seenPackets.set(packetId, true);
     while (seenPackets.size > dedupCapacity) {
-      const oldest = seenPackets.keys().next();
-      if (oldest.done === true) break;
-      seenPackets.delete(oldest.value);
+      const leastRecent = seenPackets.keys().next();
+      if (leastRecent.done === true) break;
+      seenPackets.delete(leastRecent.value);
     }
   }
 
   /** Invariants 3 + 4. Mode is per-message and data-driven. */
-  function guard(entry: StreamEntry, msg: ValidatedMessage, epoch: number): GuardDecision {
-    const entity = entry.decl.entity(msg);
+  function guard(
+    entry: StreamEntry,
+    msg: ValidatedMessage,
+    epoch: number,
+    entity: string,
+  ): GuardDecision {
     const stamp = entry.decl.stamp?.(msg);
 
     if (stamp !== undefined) {
@@ -185,7 +212,7 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     return { ok: true, commit: () => epochOf.set(key, epoch) };
   }
 
-  function dispatch(entry: StreamEntry, msg: ValidatedMessage): void {
+  function dispatch(entry: StreamEntry, msg: ValidatedMessage, entity: string): void {
     const target = entry.decl.dispatch;
     try {
       if ("machine" in target) {
@@ -203,38 +230,43 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       return;
     }
     counters.dispatched++;
-    emit({
+    emit(() => ({
       stage: "dispatch",
       stream: entry.id,
-      entity: entry.decl.entity(msg),
+      entity,
       verdict: "pass",
       message: msg,
-    });
+    }));
   }
 
   /** guard → mask → dispatch. Entered directly (skipping dedup, which the
-   *  message already cleared) on the mask-release path — invariant 6. */
-  function admit(entry: StreamEntry, msg: ValidatedMessage, epoch: number): void {
-    const entity = entry.decl.entity(msg);
-    const decision = guard(entry, msg, epoch);
+   *  message already cleared) on the mask-release path — invariant 6.
+   *  `entity` is extracted exactly once per message, by the caller. */
+  function admit(
+    entry: StreamEntry,
+    msg: ValidatedMessage,
+    epoch: number,
+    entity: string,
+  ): void {
+    const decision = guard(entry, msg, epoch, entity);
     if (decision.ok === false) {
       counters.stale++;
-      emit({ stage: "guard", stream: entry.id, entity, verdict: "drop", message: msg });
+      emit(() => ({ stage: "guard", stream: entry.id, entity, verdict: "drop", message: msg }));
       return;
     }
-    emit({ stage: "guard", stream: entry.id, entity, verdict: "pass", message: msg });
+    emit(() => ({ stage: "guard", stream: entry.id, entity, verdict: "pass", message: msg }));
 
     const maskKey = entry.id + SEP + entity; // invariant 6: never topic-split
     if ((maskHolds.get(maskKey) ?? 0) > 0) {
-      withheld.set(maskKey, { msg, entry, epoch });
+      withheld.set(maskKey, { msg, entry, epoch, entity });
       counters.masked++;
-      emit({ stage: "mask", stream: entry.id, entity, verdict: "withheld", message: msg });
+      emit(() => ({ stage: "mask", stream: entry.id, entity, verdict: "withheld", message: msg }));
       return;
     }
-    emit({ stage: "mask", stream: entry.id, entity, verdict: "pass", message: msg });
+    emit(() => ({ stage: "mask", stream: entry.id, entity, verdict: "pass", message: msg }));
 
     decision.commit();
-    dispatch(entry, msg);
+    dispatch(entry, msg, entity);
   }
 
   function pipeline(msg: ValidatedMessage): void {
@@ -246,21 +278,22 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     }
 
     if (seenPackets.has(msg.packetId)) {
+      touch(msg.packetId); // a repeat is a use: refresh recency, then drop
       counters.duplicate++;
-      emit({ stage: "dedup", stream: entry.id, verdict: "drop", message: msg });
+      emit(() => ({ stage: "dedup", stream: entry.id, verdict: "drop", message: msg }));
       return;
     }
-    remember(msg.packetId);
-    emit({ stage: "dedup", stream: entry.id, verdict: "pass", message: msg });
+    touch(msg.packetId);
+    emit(() => ({ stage: "dedup", stream: entry.id, verdict: "pass", message: msg }));
 
-    admit(entry, msg, globalEpoch);
+    admit(entry, msg, globalEpoch, entry.decl.entity(msg));
   }
 
   /** Invariant 8. */
   function handleGap(): void {
     globalEpoch++;
     counters.gaps++;
-    emit({ stage: "gap", verdict: "pass" });
+    emit(() => ({ stage: "gap", verdict: "pass" }));
     for (const entry of entries) {
       const target = entry.decl.dispatch;
       try {
@@ -277,7 +310,8 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
         }
         entry.decl.onGap?.();
       } catch (cause) {
-        onError(makeIngressError("dispatch-failed", EMPTY_ENVELOPE, cause));
+        // A gap sweep has no single message of its own either.
+        onError(makeIngressError("dispatch-failed", null, cause));
       }
     }
   }
@@ -300,14 +334,14 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
       const item = withheld.get(key);
       if (item === undefined) return;
       withheld.delete(key);
-      emit({
+      emit(() => ({
         stage: "mask",
         stream: item.entry.id,
         entity,
         verdict: "released",
         message: item.msg,
-      });
-      runToCompletion(() => admit(item.entry, item.msg, item.epoch));
+      }));
+      runToCompletion(() => admit(item.entry, item.msg, item.epoch, item.entity));
     };
   }
 
@@ -352,6 +386,10 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     });
   }
 
+  /** Detaches the boundary-signal listener so a disposed kit leaves nothing
+   *  attached to a longer-lived signal. */
+  let detachBoundarySignal: (() => void) | undefined;
+
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
@@ -359,6 +397,8 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     unsubscribeFeed?.();
     for (const t of storeWireTeardowns) t();
     for (const t of machineWireTeardowns) t();
+    detachBoundarySignal?.();
+    detachBoundarySignal = undefined;
     controller.abort();
     seenPackets.clear();
     stampHighWater.clear();
@@ -368,9 +408,16 @@ export function createStateKit(config: StateKitConfig): StateKit & SpikeInternal
     withheld.clear();
   };
 
-  if (config.signal !== undefined) {
-    if (config.signal.aborted) dispose();
-    else config.signal.addEventListener("abort", dispose, { once: true });
+  const boundarySignal = config.signal;
+  if (boundarySignal !== undefined) {
+    if (boundarySignal.aborted) {
+      dispose();
+    } else {
+      const onBoundaryAbort = (): void => dispose();
+      boundarySignal.addEventListener("abort", onBoundaryAbort, { once: true });
+      detachBoundarySignal = () =>
+        boundarySignal.removeEventListener("abort", onBoundaryAbort);
+    }
   }
 
   return {

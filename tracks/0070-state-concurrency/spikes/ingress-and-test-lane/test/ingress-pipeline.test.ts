@@ -3,11 +3,26 @@
 // entry point rather than a pass-through: design.md invariants 1, 3, 4, 6, 8,
 // 11 plus the composition-root error modes.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { createActor, createMachine } from "xstate";
-import { createRaceHarness, createStateKit, IngressConfigError } from "../src/index.ts";
-import type { IngressInspectionEvent, StreamDecl, ValidatedMessage } from "../src/index.ts";
+import {
+  createRaceHarness,
+  createStateKit,
+  IngressConfigError,
+  SettleNotQuiescentError,
+} from "../src/index.ts";
+import type {
+  IngressError,
+  IngressInspectionEvent,
+  StreamDecl,
+  ValidatedMessage,
+  Wire,
+} from "../src/index.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 interface Reading {
   rigId: string;
@@ -225,13 +240,21 @@ describe("ingress pipeline invariants", () => {
       "GET /thing",
     );
 
-    const cancelled = fetchThing({ signal: controller.signal });
-    const kept = fetchThing({ signal: new AbortController().signal });
+    // Outcomes are captured (handlers attached) before settle() so the
+    // rejection is never momentarily unhandled across settle's macrotask turn.
+    const cancelled = fetchThing({ signal: controller.signal }).then(
+      () => "resolved",
+      (e: Error) => e.name,
+    );
+    const kept = fetchThing({ signal: new AbortController().signal }).then(
+      (v: string) => v,
+      () => "rejected",
+    );
     controller.abort(); // aborted while the call is still parked in the scheduler
     await harness.settle();
 
-    await expect(cancelled).rejects.toThrow("The operation was aborted");
-    await expect(kept).resolves.toBe("payload");
+    expect(await cancelled).toBe("AbortError");
+    expect(await kept).toBe("payload");
   });
 
   it("routes a throwing dispatch to onError and keeps the stream alive", async () => {
@@ -264,6 +287,257 @@ describe("ingress pipeline invariants", () => {
     expect(errors).toStrictEqual(["dispatch-failed"]);
     expect(seen).toStrictEqual([20]);
     expect(kit.stats.dispatched).toBe(1);
+    kit.dispose();
+  });
+});
+
+// ── Review-round hardening (task-8 review findings 1, 3, 4, 6, 8, 9, 10) ──
+
+describe("ingress hardening", () => {
+  it("refuses a query target that declares `write`, at the composition root", () => {
+    const harness = pinned([]);
+    const withWrite: StreamDecl<Reading> = {
+      topic: "rig/+/reading",
+      entity: (m) => m.payload.rigId,
+      dispatch: {
+        query: (m) => ["rig", m.payload.rigId],
+        write: (m) => () => m.payload.value,
+      },
+    };
+    expect(() =>
+      createStateKit({
+        feed: harness.feed,
+        streams: { rig: withWrite },
+        queryClient: { invalidateQueries: () => {} },
+      }),
+    ).toThrow(/dispatch\.write/);
+
+    // …and the same declaration WITHOUT `write` constructs fine.
+    expect(() =>
+      createStateKit({
+        feed: pinned([]).feed,
+        streams: {
+          rig: { ...withWrite, dispatch: { query: (m) => ["rig", m.payload.rigId] } },
+        },
+        queryClient: { invalidateQueries: () => {} },
+      }),
+    ).not.toThrow();
+  });
+
+  it("dev-warns and continues when no onError is supplied", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const harness = pinned([1, 2]);
+    const kit = createStateKit({
+      feed: harness.feed,
+      streams: {
+        rig: {
+          topic: "rig/+/reading",
+          entity: (m: ValidatedMessage<Reading>) => m.payload.rigId,
+          dispatch: { store: () => {} },
+        },
+      },
+      // no onError — design.md's documented default is "dev-warn and continue"
+    });
+
+    harness.push(
+      reading("p1", "boat/1/reading", "1", 10), // unmatched-topic
+      reading("p2", "rig/2/reading", "2", 20), // still delivered afterwards
+    );
+    await harness.settle();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("unmatched-topic");
+    expect(kit.stats.unmatched).toBe(1);
+    expect(kit.stats.dispatched).toBe(1); // continued
+    kit.dispose();
+  });
+
+  it("marks a wire fan-out failure with a null envelope, unlike a dispatch failure", async () => {
+    const errors: IngressError[] = [];
+    const actor = createActor(
+      createMachine({
+        id: "rig",
+        initial: "idle",
+        states: { idle: { on: { GO: "busy" } }, busy: {} },
+      }),
+    ).start();
+
+    const wires: Wire[] = [
+      {
+        fromMachine: actor,
+        select: (snap) => snap.value,
+        into: () => {
+          throw new Error("wire exploded");
+        },
+      },
+    ];
+
+    const harness = pinned([1]);
+    const kit = createStateKit({
+      feed: harness.feed,
+      wires,
+      streams: {
+        rig: {
+          topic: "rig/+/reading",
+          entity: (m: ValidatedMessage<Reading>) => m.payload.rigId,
+          dispatch: {
+            store: () => {
+              throw new Error("dispatch exploded");
+            },
+          },
+        },
+      },
+      onError: (e) => errors.push(e),
+    });
+
+    harness.push(reading("p1", "rig/1/reading", "1", 10));
+    await harness.settle();
+    actor.send({ type: "GO" }); // projection changes -> the throwing wire runs
+
+    const wireFailures = errors.filter((e) => e.envelope === null);
+    const messageFailures = errors.filter((e) => e.envelope !== null);
+
+    expect(wireFailures).toHaveLength(1);
+    expect(wireFailures[0]!.message).toContain("wire fan-out");
+    expect(messageFailures).toHaveLength(1);
+    expect(messageFailures[0]!.envelope!.packetId).toBe("p1");
+    expect(messageFailures[0]!.message).toContain("rig/1/reading");
+    kit.dispose();
+  });
+
+  it("evicts least-RECENTLY-used packet ids, not merely the oldest inserted", async () => {
+    const dispatched: string[] = [];
+    const harness = pinned([1, 2, 3, 4, 5, 6]);
+    const kit = createStateKit({
+      feed: harness.feed,
+      dedupCapacity: 2,
+      streams: {
+        rig: {
+          topic: "rig/+/reading",
+          entity: (m: ValidatedMessage<Reading>) => m.payload.rigId,
+          dispatch: { store: (m) => dispatched.push(m.packetId) },
+        },
+      },
+    });
+
+    // A, B fill the registry; the repeat of A refreshes A's recency, so adding
+    // C must evict B. Under plain FIFO it would evict A instead.
+    harness.push(
+      reading("A", "rig/1/reading", "1", 1),
+      reading("B", "rig/2/reading", "2", 2),
+      reading("A", "rig/1/reading", "1", 3), // duplicate -> refreshes A
+      reading("C", "rig/3/reading", "3", 4), // evicts the least recent (B)
+      reading("A", "rig/1/reading", "1", 5), // still remembered -> duplicate
+      reading("B", "rig/2/reading", "2", 6), // was evicted -> passes again
+    );
+    await harness.settle();
+
+    expect(dispatched).toStrictEqual(["A", "B", "C", "B"]);
+    expect(kit.stats.duplicate).toBe(2); // both repeats of A
+    kit.dispose();
+  });
+
+  it("builds inspection events lazily and extracts entity once per message", async () => {
+    let entityCalls = 0;
+    const entity = (m: ValidatedMessage<Reading>) => {
+      entityCalls++;
+      return m.payload.rigId;
+    };
+
+    const withoutTap = createStateKit({
+      feed: pinned([1]).feed,
+      streams: { rig: { topic: "rig/+/reading", entity, dispatch: { store: () => {} } } },
+    });
+    void withoutTap;
+
+    // Re-run the same message with and without an inspect tap.
+    const runOnce = async (inspect?: (ev: IngressInspectionEvent) => void) => {
+      entityCalls = 0;
+      const harness = pinned([1]);
+      const kit = createStateKit({
+        feed: harness.feed,
+        streams: { rig: { topic: "rig/+/reading", entity, dispatch: { store: () => {} } } },
+        ...(inspect ? { inspect } : {}),
+      });
+      harness.push(reading("p1", "rig/1/reading", "1", 10));
+      await harness.settle();
+      kit.dispose();
+      return entityCalls;
+    };
+
+    const events: IngressInspectionEvent[] = [];
+    expect(await runOnce()).toBe(1); // no tap: still exactly one extraction
+    expect(await runOnce((ev) => events.push(ev))).toBe(1); // tap: no extra calls
+    expect(events.map((e) => e.stage)).toStrictEqual(["dedup", "guard", "mask", "dispatch"]);
+  });
+
+  it("detaches its boundary-signal listener on dispose", () => {
+    const controller = new AbortController();
+    const removed: string[] = [];
+    const added: string[] = [];
+    const realAdd = controller.signal.addEventListener.bind(controller.signal);
+    const realRemove = controller.signal.removeEventListener.bind(controller.signal);
+    controller.signal.addEventListener = ((type: string, ...rest: unknown[]) => {
+      added.push(type);
+      return (realAdd as (...a: unknown[]) => void)(type, ...rest);
+    }) as typeof controller.signal.addEventListener;
+    controller.signal.removeEventListener = ((type: string, ...rest: unknown[]) => {
+      removed.push(type);
+      return (realRemove as (...a: unknown[]) => void)(type, ...rest);
+    }) as typeof controller.signal.removeEventListener;
+
+    const kit = createStateKit({ signal: controller.signal });
+    expect(added).toStrictEqual(["abort"]);
+    expect(removed).toStrictEqual([]);
+
+    kit.dispose();
+    expect(removed).toStrictEqual(["abort"]);
+
+    // The boundary signal outlives the kit; aborting it now is inert.
+    controller.abort();
+    expect(kit.signal.aborted).toBe(true); // from dispose, not from this abort
+  });
+});
+
+describe("RaceHarness.settle quiescence", () => {
+  it("throws rather than returning quietly while scheduled tasks remain", async () => {
+    const harness = createRaceHarness(fc.schedulerFor([...Array(200)].map((_, i) => i + 1)));
+    let alive = true;
+    let n = 0;
+
+    // A producer parked in the macrotask queue: it schedules one new delivery
+    // per turn, so the feed never becomes quiescent. Before this fix settle()
+    // returned silently and a caller would have asserted on partial state.
+    const produce = () => {
+      if (!alive) return;
+      harness.push(reading(`p${++n}`, "rig/1/reading", "1", n));
+      setTimeout(produce, 0);
+    };
+    setTimeout(produce, 0);
+
+    try {
+      await expect(harness.settle()).rejects.toThrow(SettleNotQuiescentError);
+    } finally {
+      alive = false;
+    }
+  }, 30_000);
+
+  it("still returns normally once the feed goes quiet", async () => {
+    const dispatched: number[] = [];
+    const harness = pinned([1]);
+    const kit = createStateKit({
+      feed: harness.feed,
+      streams: {
+        rig: {
+          topic: "rig/+/reading",
+          entity: (m: ValidatedMessage<Reading>) => m.payload.rigId,
+          dispatch: { store: (m) => dispatched.push(m.payload.value) },
+        },
+      },
+    });
+    harness.push(reading("p1", "rig/1/reading", "1", 10));
+    await expect(harness.settle()).resolves.toBeUndefined();
+    expect(dispatched).toStrictEqual([10]);
     kit.dispose();
   });
 });

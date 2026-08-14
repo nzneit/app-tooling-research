@@ -15,14 +15,14 @@ Interfaces implemented per [design.md](design.md)'s **Chosen interface**: `creat
 `IngressConfigError`. Pinned runtime: xstate 5.32.5, zustand 5.0.15, fast-check 4.9.0,
 @fast-check/worker 0.6.0, vitest 4.1.10, typescript 7.0.2, Node 24.18.0.
 
-**Suite**: 7 files, 22 tests, all passing; `npm run typecheck` clean.
+**Suite**: 7 files, 30 tests, all passing; `npm run typecheck` clean.
 
 ## Checks
 
 | Report check | Verdict | Evidence |
 |---|---|---|
 | **Composition wiring end to end** — machine → vanilla store → React and store → machine on the app's actual xstate/zustand versions | **go** | `test/composition.test.ts::carries machine -> store -> React and store -> machine through Wire declarations` — `actor.subscribe` → store action → `useStore` selector renders `42` in happy-dom (React 19.2.8 + RTL 16.3.2); `store.subscribe(selector, (next, prev))` → `actor.send` lands `7` in machine context; `kit.dispose()` cuts both wires (a later `THROTTLE 99` leaves the store at `7`). Both directions declared as two `Wire` literals. |
-| **…measure the glue in lines** | **go** | `test/glue-count.test.ts::wires both directions in a bounded number of caller-authored lines` counts the marked regions in `test/composition.test.ts`: **10 caller-authored lines** through `wires: Wire[]` + `createStateKit`, vs **30 lines** hand-rolled for the same guarantees (equals short-circuit, run-to-completion mailbox, ordered teardown) — a **3.0×** reduction. Counts are non-blank, non-comment lines and are asserted, so they cannot drift silently. |
+| **…measure the glue in lines** | **go** | `test/glue-count.test.ts::wires both directions in a bounded number of caller-authored lines` counts the marked regions in `test/composition.test.ts`: **10 caller-authored lines** through `wires: Wire[]` + `createStateKit`, vs **30 lines** hand-rolled to reach the same wiring shape (equals short-circuit, run-to-completion mailbox, ordered teardown) — a **3.0×** reduction. Of the 30 baseline lines, **~12 are the inlined mailbox/run-to-completion mechanics** (`mailbox`, `draining`, `runToCompletion`) that `createStateKit` gets for free — excluding them leaves an 18-line baseline, an **~1.8×** reduction, which is the fairer like-for-like number for the subscribe/send/teardown wiring itself. Note also that the two sides are not asserted to the same depth: the baseline test (`converges a write-back listener…`, manual block) checks only final values after settling, whereas the kit-side re-entrancy test additionally asserts wire-callback nesting depth — so "same guarantees" overstates it; the manual baseline is not shown to guard against re-entrancy the way the kit-side assertion does. Counts are non-blank, non-comment lines and are asserted, so they cannot drift silently. |
 | **…no feedback loop or re-entrancy hazard under synchronous listener fan-out** | **go** | `test/composition.test.ts::converges a write-back listener at a bounded dispatch count, with no re-entrancy` — a genuine cycle (the machine clamps whatever the store writes back at it, so the projection really changes) settles at **2 store writes / 2 machine sends** and terminates at 10; observed nesting depth of the wire callback is **1**, i.e. invariant 9's shared mailbox queued the re-entrant send instead of recursing. |
 | **Schedulable ingress seam (decisive)** — `fc.scheduler` property, scheduled synthetic MQTT vs scheduled REST resolution, stale write rejected | **go** | `test/ingress-race.test.ts::rejects the stale REST write under every fc-chosen interleaving (stamped guard)` — 200 runs, **12 distinct scheduler task orderings** explored. Per run: every accepted write strictly increases, `dispatched + stale === 3` (accounting closes), and the store converges to the newest stamp (v3) in *every* interleaving. Non-vacuity is asserted: fc produced both REST-lands-first runs (22/200) and runs where the guard rejected a stale write (191/200). Pipeline order itself pinned by `test/ingress-pipeline.test.ts::runs dedup -> guard -> mask -> dispatch in order, once per message` (the inspect tap yields exactly `dedup:pass, guard:pass, mask:pass, dispatch:pass`). |
 | **…the failure replays from `{seed, path}`** | **go** | `test/replay-and-pinning.test.ts::reproduces the identical scheduler interleaving from the reported seed and path`. **Mechanism verified**: (1) `fc.check(property, { numRuns: 500, endOnFailure: true })` returns `RunDetails` carrying `seed` and `counterexamplePath`; (2) `fc.check(sameProperty, { seed, path: counterexamplePath, endOnFailure: true })` re-runs with `numRuns === 1` and the same `counterexamplePath`; (3) verified *beyond* "it failed again" — each run records `s.report()` filtered to released tasks and mapped to `taskId`, and the two runs' orderings are asserted `toStrictEqual`, i.e. the same interleaving, not merely the same verdict. A representative discovery: failure on run 1, `seed 11863131`, `path "0"`, task ordering `[1, 4, 3, 2]`. |
@@ -39,7 +39,12 @@ Environment and interface deviations, per the spike harness spec.
    `invalidateQueries` slice the ingress touches). Swapping in the real imports is a type-only
    change — no member of the surface moves. The query `DispatchTarget` arm is implemented
    (invalidate-don't-set plus the `family`/seen-key gap sweep) but is exercised only by the
-   composition-root error-mode test; Task 9 owns the real bridge check.
+   composition-root error-mode test; Task 9 owns the real bridge check. This spike implements
+   invalidate-don't-set only, not the stamp-guarded write path design.md's `write` member names —
+   so `createStateKit` throws `IngressConfigError` at construction if a query stream declares
+   `dispatch.write`, rather than silently ignoring it (`test/ingress-pipeline.test.ts::refuses a
+   query target that declares 'write', at the composition root`). Task 9 lands the stamped write
+   path and lifts the restriction.
 2. **`StateKit.optimisticMutation` / `useOptimisticMutation` are not implemented** — deferred to
    Task 9 per the task brief. They are absent from `StateKit`, not redesigned. The mask stage of
    the pipeline IS implemented and correctly ordered.
@@ -91,8 +96,11 @@ Environment and interface deviations, per the spike harness spec.
 - **A-4 / A-5 (xstate v5, zustand v4-or-5)** — both wires bind structurally to the real
   xstate 5.32.5 actor (`subscribe` / `getSnapshot` / `send`) and the real zustand 5.0.15 vanilla
   store with `subscribeWithSelector`, with no adapter shims and no casts at the wire declarations.
-- **A-7 (≤ ~1k msg/s)** — not measured. The pipeline is O(1) per message (map lookups plus one
-  compare) as designed, but no throughput number was taken.
+- **A-7 (≤ ~1k msg/s)** — not measured. The pipeline is *not* uniformly O(1) per message as
+  designed: stream routing (`pipeline()`) does a **linear `entries.find(e => e.match(msg.topic))`
+  scan** over the declared streams, so per-message cost is O(streams) there; dedup/guard/mask are
+  map lookups plus a compare. At the stream counts a spike of this shape would realistically
+  declare, the linear scan is not expected to dominate, but no throughput number was taken.
 - **A-9 (vitest)** — vitest 4.1.10 hosts `fc.assert`, `fc.check`, `fc.schedulerFor` and
   `@fast-check/worker`'s `assert` with no adapter package. `@fast-check/worker` needed no
   transpilation step: its worker loads the raw `.ts` predicate module directly under Node 24's

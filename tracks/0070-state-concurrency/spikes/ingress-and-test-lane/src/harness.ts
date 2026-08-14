@@ -25,6 +25,18 @@ async function flushMicrotasks(): Promise<void> {
   for (let i = 0; i < 4; i++) await Promise.resolve();
 }
 
+/** One turn of the macrotask queue, so work parked in a timer can land. */
+function flushMacrotask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Drain rounds `settle()` will spend before declaring the feed non-quiescent. */
+const SETTLE_ROUNDS = 64;
+
+export class SettleNotQuiescentError extends Error {
+  override readonly name = "SettleNotQuiescentError";
+}
+
 /**
  * Accepts `fc.scheduler()` for exploration or `fc.schedulerFor(ordering)` to
  * pin a found interleaving as a deterministic regression test — same harness
@@ -80,12 +92,23 @@ export function createRaceHarness(s: Scheduler): RaceHarness {
       // design.md names s.waitAll(); fast-check 4.9 deprecates it in favour of
       // waitIdle(), which also awaits tasks scheduled BY a released task (the
       // REST-resolution-pushes-a-message shape check 2 needs). Looping with a
-      // microtask flush covers `.then`-scheduled pushes either way.
-      for (let round = 0; round < 64; round++) {
+      // microtask flush covers `.then`-scheduled pushes; the macrotask turn
+      // covers work parked in a timer, which waitIdle cannot see.
+      for (let round = 0; round < SETTLE_ROUNDS; round++) {
         await s.waitIdle();
         await flushMicrotasks();
-        if (s.count() === 0) return;
+        if (s.count() === 0) {
+          await flushMacrotask();
+          if (s.count() === 0) return;
+        }
       }
+      // NEVER return quiet with work outstanding: a caller that asserted here
+      // would be asserting on partial state and passing vacuously.
+      throw new SettleNotQuiescentError(
+        `RaceHarness.settle: ${s.count()} scheduled task(s) still pending after ` +
+          `${SETTLE_ROUNDS} drain rounds — the feed is not quiescent, so any ` +
+          `assertion after this point would be reading partial state.`,
+      );
     },
   };
 }
