@@ -11,7 +11,7 @@ The most important risk is contractual: we assume the messages carry no server-i
 
 ## Survey
 
-All facts below were verified against the live web on 2026-08-14. Per D-0001 this is desk research only; nothing was installed or run. Binding upstream context: 0010's accepted report (orval 8.24.0 mutator-wrapped REST client with per-status zod validation, compiled Ajv standalone validators on the AsyncAPI leg, the four-class error taxonomy, reject-and-quarantine — D-0010) and 0060's drafted report (the transport boundary is a **build** — an owned `transport-boundary` package whose MQTT/connection surface is an xstate v5 actor system over mqtt.js 5.15.2; TanStack Query outside the boundary; the taxonomy owned by `transport-boundary/errors`; RxJS and Effect not adopted). Primary evidence lives in the nine Wave 2 investigation files under .superpowers/sdd/2026-08-14-wave-2/survey-0070/; the race taxonomy, ingress design, and stale-vs-fresh rules are synthesized under Key questions 1, 2, 6, and 7.
+All facts below were verified against the live web on 2026-08-14. Per D-0001 this is desk research only; nothing was installed or run. Binding upstream context: 0010's accepted report (orval 8.24.0 mutator-wrapped REST client with per-status zod validation, compiled Ajv standalone validators on the AsyncAPI leg, the four-class error taxonomy, reject-and-quarantine — D-0010) and 0060's drafted report (the transport boundary is a **build** — an owned `transport-boundary` package whose MQTT/connection surface is an xstate v5 actor system over mqtt.js 5.15.2; TanStack Query outside the boundary; the taxonomy owned by `transport-boundary/errors`; RxJS and Effect not adopted). Primary evidence was gathered in nine per-candidate investigation memos during the survey (transient working files, since retired) and consolidated into the Sources section; the race taxonomy, ingress design, and stale-vs-fresh rules are synthesized under Key questions 1, 2, 6, and 7.
 
 ### build: the race-guard and composition pattern kit (prior-art survey)
 
@@ -195,7 +195,7 @@ Pre-scoped per D-0001; each item is a go/no-go check. The first four extend 0060
 
 ## Sources
 
-All accessed 2026-08-14. Primary evidence was gathered in the nine Wave 2 investigation files (xstate-actors.md, xstate-store.md, zustand-patterns.md, tanstack-query.md, cancellation-idioms.md, fast-check.md, xstate-test.md, prior-art.md, gap-scan.md under .superpowers/sdd/2026-08-14-wave-2/survey-0070/); the URLs below are their consolidated source set. Binding upstream: tracks/0010-contract-pipeline/report.md (accepted) and tracks/0060-transport-abstraction/report.md (drafted); plan: tracks/0070-state-concurrency/research-plan.md; app facts: facts/app-profile.md (unfilled — assumptions A-1…A-14 per D-0004).
+All accessed 2026-08-14. Primary evidence was gathered in nine per-candidate investigation memos during the survey (xstate-actors, xstate-store, zustand-patterns, tanstack-query, cancellation-idioms, fast-check, xstate-test, prior-art, gap-scan — transient working files, since retired); the URLs below are their consolidated source set and the durable record. Binding upstream: tracks/0010-contract-pipeline/report.md (accepted) and tracks/0060-transport-abstraction/report.md (drafted); plan: tracks/0070-state-concurrency/research-plan.md; app facts: facts/app-profile.md (unfilled — assumptions A-1…A-14 per D-0004).
 
 ### xstate actors, @xstate/react, and the v6 alpha
 
