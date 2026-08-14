@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** Wave 2 reports drafted (0060, 0070) — next: cross-track coherence pass, then user review.
+> **Frontier:** Wave 2 reports drafted (0060, 0070) — next: user review and acceptance (D-0015, D-0016).
 
 ## How it works
 

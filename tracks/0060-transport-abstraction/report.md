@@ -146,14 +146,14 @@ Weighted read: the **build + xstate actors + TanStack Query (outside)** composit
 3. **xstate v6 alpha in flight** (6.0.0-alpha.36 on 2026-08-12; breaking roadmap items in [#5061](https://github.com/statelyai/xstate/discussions/5061)) — boundary code targets v5 `setup()`; isolate xstate API touchpoints for a cheaper migration.
 4. **0070 coupling**: the actor-surface choice presumes 0070 stays on xstate; if not, the MQTT idiom must be re-decided, with RxJS the named fallback (Key question 1 coordination note).
 5. **TanStack Query defaults are actively harmful for contract violations** (silent 3-retry backoff on class-2 errors) and cancellation is opt-in — the taxonomy-aware retry predicate and mutator signal-threading are definition-of-done, not polish.
-6. **Dual sources of truth** (QueryCache vs Zustand for entities served by both legs) is an unadjudicated 0070 decision; adopting TanStack Query without deciding it recreates the shadow-state problem the boundary exists to prevent.
+6. **Dual sources of truth** (QueryCache vs Zustand for entities served by both legs) is adjudicated in 0070 Key question 5 — partition entity ownership, with invalidate-don't-set as the interim bridge until server-issued ordering stamps land (0070's own risk 6 notes this closes only when the layering lint enforcing the partition actually lands). Until then, adopting TanStack Query without enforcing that partition recreates the shadow-state problem the boundary exists to prevent.
 7. **Per-message actor-interpretation overhead is unmeasured** at an unknown peak rate; the ≤1k msg/s assumption (A-4) makes it immaterial, but a spike must measure if rates are higher.
 8. **Two error shapes forever**: `fromZodError` + `fromAjvErrors` makes 0010's risk 3 permanent in one module — deliberate and contained, but real integration surface.
 
 **Assumptions declared in place of facts (D-0004; facts/app-profile.md is unfilled — each is a question for the app owner):**
 
 - **A-1**: The app's xstate is already v5 (actors/`emit`/`setup` are v5-only); a v4 app would need a migration first, materially weakening the zero-marginal-cost argument.
-- **A-2**: TypeScript ≥ 5.0 (xstate v5 hard requirement; 0010's zod-4 assumption) and React within `^18 || ^19` (react-query 5 peer range).
+- **A-2**: TypeScript ≥ 5.0 (xstate v5 hard requirement; 0010's zod-4 assumption) — but TanStack Query's stated support window raises the effective floor to ≥5.4 (matches 0070's A-3) — and React within `^18 || ^19` (react-query 5 peer range).
 - **A-3**: mqtt.js is on the current 5.x line (5.15.2 evaluated) over WSS.
 - **A-4**: Peak MQTT rate ≤ ~1k msg/s (0010's assumption carried forward) — makes per-message overhead immaterial and the sampled validation tier optional.
 - **A-5**: QoS 0/1 with `clean: true` sessions — keeps the worst resubscribe/duplicate bug history out of scope; the dedup guard is retained regardless.
@@ -182,7 +182,7 @@ Pre-scoped per D-0001; each item is a go/no-go check.
 
 ## Sources
 
-All accessed 2026-08-14. Primary evidence was gathered in the nine Wave 2 investigation files (rxjs.md, effect.md, tanstack-query.md, openapi-fetch.md, ts-rest-zodios.md, xstate-actors.md, emitters.md, prior-art.md, gap-scan.md under .superpowers/sdd/2026-08-14-wave-2/survey-0060/); the URLs below are their consolidated source set. Binding upstream: tracks/0010-contract-pipeline/report.md (accepted); plan: tracks/0060-transport-abstraction/research-plan.md; app facts: facts/app-profile.md (unfilled — assumptions A-1…A-13 per D-0004).
+All accessed 2026-08-14. Primary evidence was gathered in the nine Wave 2 investigation files (rxjs.md, effect.md, tanstack-query.md, openapi-fetch.md, ts-rest-zodios.md, xstate-actors.md, emitters.md, prior-art.md, gap-scan.md under .superpowers/sdd/2026-08-14-wave-2/survey-0060/); the URLs below are their consolidated source set. Binding upstream: tracks/0010-contract-pipeline/report.md (accepted); plan: tracks/0060-transport-abstraction/research-plan.md; app facts: facts/app-profile.md (unfilled — assumptions A-1…A-14 per D-0004).
 
 ### mqtt.js and the build's prior art
 
