@@ -8,10 +8,10 @@
 // mutation lifecycle (onMutate -> mutationFn -> onError -> onSettled) and hands
 // back an unmodified UseMutationResult.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { createStateKit } from "../src/index.ts";
+import { createStateKit, OptimisticConfigError } from "../src/index.ts";
 import type { StateKit } from "../src/index.ts";
 
 interface Counter {
@@ -82,6 +82,28 @@ describe("useOptimisticMutation (the React adapter)", () => {
 
     confirm({ value: 5 });
     await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("success"));
+    kit.dispose();
+  });
+
+  it("fails where the unit is DECLARED when the kit has no queryClient", () => {
+    // Same failure point as `kit.optimisticMutation`, which throws at
+    // declaration: without this the hook would fail later, inside `onMutate`,
+    // where TanStack turns it into a mutation error and the two surfaces
+    // disagree about what a misconfigured kit does.
+    const kit = createStateKit({}); // no queryClient
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    function Broken() {
+      kit.useOptimisticMutation<Counter, { delta: number }>({
+        mutationFn: async () => ({ value: 0 }),
+        queryKey: () => [...KEY],
+        optimistic: () => ({ value: 0 }),
+      });
+      return null;
+    }
+
+    expect(() => render(<Broken />)).toThrow(OptimisticConfigError);
+    errors.mockRestore();
     kit.dispose();
   });
 

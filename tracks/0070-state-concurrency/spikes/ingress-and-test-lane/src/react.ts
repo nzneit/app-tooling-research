@@ -8,6 +8,7 @@ import { useMutation } from "@tanstack/react-query";
 import {
   begin,
   composeSignal,
+  requireClient,
   rollback,
   settle,
   type OptimisticContext,
@@ -19,6 +20,12 @@ export function useOptimisticMutationImpl<TData, TVars>(
   deps: OptimisticDeps,
   opts: OptimisticMutationOptions<TData, TVars>,
 ): UseMutationResult<TData, unknown, TVars> {
+  // Same failure point as `optimisticMutation`: a missing queryClient is a
+  // composition-root mistake, so it throws where the unit is DECLARED, not
+  // later inside `onMutate` where TanStack would swallow it into a mutation
+  // error and the two surfaces would disagree.
+  requireClient(deps);
+
   return useMutation<TData, unknown, TVars, OptimisticContext>(
     {
       mutationFn: (vars: TVars) => {

@@ -12,8 +12,9 @@
 import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import type { Scheduler } from "fast-check";
 import { createRaceHarness, createStateKit } from "../src/index.ts";
-import type { RaceHarness, ValidatedMessage } from "../src/index.ts";
+import type { ValidatedMessage } from "../src/index.ts";
 
 interface Counter {
   value: number;
@@ -150,6 +151,56 @@ describe("the optimistic bundle (design.md's non-optional order)", () => {
     kit.dispose();
   });
 
+  it("undoes the optimistic write and releases the gate when mask registration throws", async () => {
+    // Steps 1-3 land, then step (4) blows up. Without the unwind, the cache
+    // would keep an unconfirmed optimistic value that no settle ever reconciles,
+    // and the gate count would leak so NOTHING for this key reconciles again.
+    const queryClient = freshClient();
+    const snapshot = { value: 2 };
+    queryClient.setQueryData(KEY, snapshot);
+    const invalidations: unknown[] = [];
+    vi.spyOn(queryClient, "invalidateQueries").mockImplementation((async (filters: unknown) => {
+      invalidations.push(filters);
+    }) as typeof queryClient.invalidateQueries);
+
+    const kit = createStateKit({ queryClient });
+    const boom = new Error("mask registration failed");
+    let mutationFnCalls = 0;
+
+    await expect(
+      kit
+        .optimisticMutation<Counter, Delta>({
+          mutationFn: async () => {
+            mutationFnCalls++;
+            return { value: 0 };
+          },
+          queryKey: () => [...KEY],
+          optimistic: (vars, current) => ({ value: (current as Counter).value + vars.delta }),
+          mask: () => {
+            throw boom;
+          },
+        })
+        .mutate({ delta: 5 }),
+    ).rejects.toBe(boom);
+
+    expect(mutationFnCalls).toBe(0); // the bundle was never entered
+    expect(queryClient.getQueryData(KEY)).toStrictEqual(snapshot); // write undone
+
+    // The gate is clean: a following mutation on the same key is "the last one
+    // in flight" and reconciles. A leaked count would have left it at 2.
+    const outcome = await kit
+      .optimisticMutation<Counter, Delta>({
+        mutationFn: async () => ({ value: 3 }),
+        queryKey: () => [...KEY],
+        optimistic: (vars, current) => ({ value: (current as Counter).value + vars.delta }),
+      })
+      .mutate({ delta: 1 });
+    expect(outcome).toStrictEqual({ outcome: "confirmed", data: { value: 3 } });
+    expect(invalidations).toStrictEqual([{ queryKey: [...KEY] }]);
+    kit.dispose();
+    vi.restoreAllMocks();
+  });
+
   it("gates reconciliation on the last in-flight mutation for the key", async () => {
     const queryClient = freshClient();
     queryClient.setQueryData(KEY, { value: 0 });
@@ -204,13 +255,16 @@ interface RaceRun {
   server: number;
   invalidateCalls: number;
   outcomes: string[];
+  /** Scheduler task ids in release order — the interleaving, as data. */
+  order: number[];
 }
 
 async function runOptimisticRace(
-  harness: RaceHarness,
+  s: Scheduler,
   secondFails: boolean,
   refetchFirst: boolean,
 ): Promise<RaceRun> {
+  const harness = createRaceHarness(s);
   const queryClient = freshClient();
   const kit = createStateKit({ queryClient });
   const server = { value: 0 };
@@ -271,9 +325,13 @@ async function runOptimisticRace(
 
   unsubscribe();
   const finalCache = (queryClient.getQueryData(KEY) as Counter).value;
+  const order = s
+    .report()
+    .filter((task) => task.status !== "pending")
+    .map((task) => task.taskId);
   kit.dispose();
   queryClient.clear();
-  return { observed, finalCache, server: server.value, invalidateCalls, outcomes };
+  return { observed, finalCache, server: server.value, invalidateCalls, outcomes, order };
 }
 
 describe("fc.scheduler property: two mutations interleaved with a refetch", () => {
@@ -281,6 +339,7 @@ describe("fc.scheduler property: two mutations interleaved with a refetch", () =
     let staleOverwrites = 0; // the maintainer-documented residual race, observed
     let rollbacks = 0;
     let runs = 0;
+    const orderings = new Set<string>(); // distinct interleavings fc actually explored
 
     await fc.assert(
       fc.asyncProperty(
@@ -289,7 +348,8 @@ describe("fc.scheduler property: two mutations interleaved with a refetch", () =
         fc.boolean(),
         async (s, secondFails, refetchFirst) => {
           runs++;
-          const run = await runOptimisticRace(createRaceHarness(s), secondFails, refetchFirst);
+          const run = await runOptimisticRace(s, secondFails, refetchFirst);
+          orderings.add(run.order.join(","));
 
           // 1. The settle gate: two overlapping mutations for one key reconcile
           //    ONCE, at the last settle — never in the middle.
@@ -328,5 +388,8 @@ describe("fc.scheduler property: two mutations interleaved with a refetch", () =
     expect(runs).toBe(60);
     expect(rollbacks).toBeGreaterThan(0);
     expect(staleOverwrites).toBeGreaterThan(0);
+    // …and the property is not quietly running one interleaving 60 times: fc
+    // must have explored more than a single scheduler ordering.
+    expect(orderings.size).toBeGreaterThan(1);
   }, 60_000);
 });

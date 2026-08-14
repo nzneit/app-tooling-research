@@ -55,7 +55,7 @@ export function isCancellation(error: unknown): boolean {
   return e.class === 1 && e.reason === "aborted";
 }
 
-function requireClient(deps: OptimisticDeps): QueryClient {
+export function requireClient(deps: OptimisticDeps): QueryClient {
   if (deps.queryClient === undefined) {
     throw new OptimisticConfigError(
       "optimisticMutation requires a queryClient on the kit config",
@@ -76,16 +76,25 @@ export async function begin<TData, TVars>(
   const keyHash = hashKey(queryKey);
   deps.inFlight.set(keyHash, (deps.inFlight.get(keyHash) ?? 0) + 1);
 
+  /** Set the moment step (3) lands, so a later failure inside `begin` knows
+   *  there is an optimistic write to undo. */
+  let applied: OptimisticContext | undefined;
+
   try {
     await queryClient.cancelQueries({ queryKey }); // (1)
     const snapshot = queryClient.getQueryData(queryKey); // (2)
     queryClient.setQueryData(queryKey, (current: unknown) => opts.optimistic(vars, current)); // (3)
+    applied = { queryKey, keyHash, snapshot, releaseMask: noop };
     const masked = opts.mask?.(vars); // (4)
     const releaseMask =
       masked === undefined ? noop : deps.hold(masked.stream, masked.entity);
-    return { queryKey, keyHash, snapshot, releaseMask };
+    return { ...applied, releaseMask };
   } catch (error) {
-    // Never leak a gate count when the bundle could not be entered.
+    // The bundle could not be entered. Undo whatever DID land: a throwing
+    // `mask` selector or `hold` would otherwise strand an unconfirmed
+    // optimistic value in the cache, with no settle to reconcile it…
+    if (applied !== undefined) rollback(deps, applied);
+    // …and never leak a gate count either.
     release(deps, keyHash);
     throw error;
   }
