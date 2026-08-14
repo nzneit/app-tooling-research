@@ -24,6 +24,17 @@ assumption in the report. Partial answers are fine.
   workspaces and will not engage here; conversely, nothing at the package-manager level
   enforces which directory may import what, so directory boundaries are convention plus
   path-based lint rules only.
+- Internal import style: **scoped-alias specifiers** (2026-08-14, user) — cross-directory
+  imports are written `import … from '@appname/path/to/thing'`. `@appname` is the app's
+  own scope: not a published npm package, not present in the root package.json
+  dependencies, and backed by no per-directory manifest. It can only resolve through a
+  tsconfig `paths` mapping plus matching alias configuration wherever else modules are
+  resolved (bundler, test runner, lint import resolvers). Two consequences to carry:
+  internal specifiers are syntactically indistinguishable from real external scoped
+  packages, so any tool that classifies imports or checks specifiers against
+  package.json may misread them; and because `paths` required `baseUrl` before TS 4.1,
+  the tsconfig may still carry `baseUrl` — which TypeScript 7.0 removed and the oxlint
+  type-aware lane rejects outright (intake 2026-08-14-0100 item d).
 
 ## Contracts
 - OpenAPI version(s):
