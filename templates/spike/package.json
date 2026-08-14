@@ -1,0 +1,9 @@
+{
+  "name": "__SPIKE_PACKAGE_NAME__",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
