@@ -172,6 +172,31 @@ export function isTrackReport(path: string): boolean {
   return /^tracks\/[^/]+\/report\.md$/.test(path);
 }
 
+// Installed/generated trees are never doc-system content (spike harness spec).
+const IGNORED_SEGMENTS = new Set(["node_modules", "dist", "coverage"]);
+export function isIgnoredPath(rel: string): boolean {
+  return rel.split(/[\\/]/).some((seg) => IGNORED_SEGMENTS.has(seg));
+}
+
+// Spike harness spec: every spike dir carries findings.md with a valid Status.
+export type Spike = { track: string; name: string; findings: string | null };
+
+const SPIKE_STATUSES = ["planned", "in progress", "complete"];
+
+export function checkSpikes(spikes: Spike[]): string[] {
+  const errs: string[] = [];
+  for (const s of spikes) {
+    const dir = `tracks/${s.track}/spikes/${s.name}`;
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s.name))
+      errs.push(`${dir}: spike dir must be a kebab slug`);
+    if (s.findings == null) { errs.push(`${dir}: missing findings.md`); continue; }
+    const m = stripFenced(s.findings).match(/^\*\*Status\*\*:\s*(.+?)\s*$/m);
+    if (!m || !SPIKE_STATUSES.includes(m[1]))
+      errs.push(`${dir}/findings.md: missing or invalid **Status**: (${SPIKE_STATUSES.join(" | ")})`);
+  }
+  return errs;
+}
+
 // Every report opens with the STE summary (D-0007): first H2 is "Summary (STE)".
 export function checkReports(files: { path: string; text: string }[]): string[] {
   const errs: string[] = [];
@@ -218,6 +243,7 @@ function listMarkdown(dirRel: string): { path: string; text: string }[] {
   if (!existsSync(abs)) return [];
   const out: { path: string; text: string }[] = [];
   for (const rel of readdirSync(abs, { recursive: true }) as string[]) {
+    if (isIgnoredPath(rel)) continue;
     if (!rel.endsWith(".md")) continue;
     const p = join(dirRel, rel);
     if (statSync(join(ROOT, p)).isDirectory()) continue;
@@ -244,6 +270,16 @@ function main(): void {
   ];
   const reports = listMarkdown("tracks").filter((f) => isTrackReport(f.path));
 
+  const spikes: Spike[] = [];
+  for (const t of trackDirs) {
+    const spikesAbs = join(tracksAbs, t, "spikes");
+    if (!existsSync(spikesAbs)) continue;
+    for (const n of readdirSync(spikesAbs)) {
+      if (!statSync(join(spikesAbs, n)).isDirectory()) continue;
+      spikes.push({ track: t, name: n, findings: read(`tracks/${t}/spikes/${n}/findings.md`) });
+    }
+  }
+
   const intakeAbs = join(ROOT, "intake");
   const intakeFiles = existsSync(intakeAbs)
     ? readdirSync(intakeAbs)
@@ -259,6 +295,7 @@ function main(): void {
     ...checkFrontier(readme),
     ...checkReports(reports),
     ...checkIntake(intakeFiles),
+    ...checkSpikes(spikes),
   ];
 
   if (errors.length) {
@@ -269,7 +306,7 @@ function main(): void {
   const intakeCount = intakeFiles.filter((f) => f.name !== "_TEMPLATE.md").length;
   console.log(
     `check-docs: ok — ${decs.length} decision(s), ${trackDirs.length} track dir(s), ` +
-    `${reports.length} report(s), ${intakeCount} intake file(s).`,
+    `${reports.length} report(s), ${intakeCount} intake file(s), ${spikes.length} spike(s).`,
   );
 }
 

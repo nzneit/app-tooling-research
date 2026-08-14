@@ -1,0 +1,5 @@
+# Spike installs and generated output (spike harness spec, 2026-08-14)
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo

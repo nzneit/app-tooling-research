@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import {
   parseEntries, checkIds, slugify, resolveAnchor, checkLinks,
   parseIndexRows, checkIndex, checkTrackDirs, checkReports, checkIntake,
-  stripFenced, checkFrontier, isTrackReport,
+  stripFenced, checkFrontier, isTrackReport, isIgnoredPath, checkSpikes,
 } from "./check-docs.ts";
-import type { Entry } from "./check-docs.ts";
+import type { Entry, Spike } from "./check-docs.ts";
 
 const entry = (id: string, line = 1): Entry => ({ title: `${id}: t`, meta: {}, body: "", line });
 const getId = (e: Entry) => e.title.match(/^(D-\d+)/)?.[1] ?? "";
@@ -133,4 +133,26 @@ test("isTrackReport matches only tracks/<dir>/report.md", () => {
   assert.ok(isTrackReport("tracks/0060-transport-abstraction/report.md"));
   assert.ok(!isTrackReport("tracks/0010-contract-pipeline/spikes/orval-wrap/report.md"));
   assert.ok(!isTrackReport("tracks/0010-contract-pipeline/draft-report.md"));
+});
+
+test("isIgnoredPath skips installed and generated trees", () => {
+  assert.equal(isIgnoredPath("0060-x/spikes/s/node_modules/pkg/README.md"), true);
+  assert.equal(isIgnoredPath("0060-x/spikes/s/dist/out.md"), true);
+  assert.equal(isIgnoredPath("0060-x/spikes/s/findings.md"), false);
+});
+
+test("checkSpikes accepts a valid spike", () => {
+  assert.deepEqual(
+    checkSpikes([{ track: "0060-x", name: "boundary-wiring", findings: "**Status**: planned" }]),
+    [],
+  );
+});
+
+test("checkSpikes rejects bad slug, missing findings, bad status", () => {
+  const errs = checkSpikes([
+    { track: "0060-x", name: "Bad_Name", findings: "**Status**: planned" },
+    { track: "0060-x", name: "no-findings", findings: null },
+    { track: "0060-x", name: "bad-status", findings: "**Status**: done" },
+  ]);
+  assert.equal(errs.length, 3);
 });
