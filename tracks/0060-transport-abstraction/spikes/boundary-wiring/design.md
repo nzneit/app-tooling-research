@@ -6,7 +6,7 @@ This document is the judged output of a design-it-twice interface panel, per the
 
 The `transport-boundary` module is one deep module fronting two protocols: an MQTT leg (mqtt.js 5.15.2 over WSS, wrapped in an xstate 5.32.5 actor system) and a REST leg (0010's orval mutator with per-status zod validation). Any interface the panel produces must satisfy these constraints, fixed by the accepted 0060 recommendation:
 
-- **Choke point below cache/retry/dedup (D-0006).** Nothing unvalidated is ever cached; a quarantined payload never becomes a TanStack Query cache entry. Validation runs immediately inside each ingress.
+- **Choke point below cache/retry/dedup (D-0006).** Nothing unvalidated is ever cached; a quarantined payload never becomes a TanStack Query cache entry. Validation runs immediately inside each ingress. (This "dedup" is the caller-side TanStack Query *request* dedup, above the seam — distinct from the MQTT protocol-level *redelivery* dedup at the ingress; see O1.)
 - **Exactly one ingress per protocol** — one MQTT message handler, one REST fetch function. Coverage lint (oxlint `no-restricted-imports`) bans `mqtt` and the raw generated client outside the package.
 - **The two-wire rule.** Discrete domain events leave via a typed `actor.on`/`emit()` surface; continuous connection state leaves via `actor.subscribe` selector projection. Neither wire may leak the other's shape.
 - **TanStack Query lives outside the module.** The module supplies the validated, taxonomy-erroring fetch function that becomes the queryFn; nothing inside the module imports TanStack Query.
@@ -186,6 +186,20 @@ export interface ChannelPolicy<T> {
   direction?: 'in' | 'out' | 'inout';     // default 'in'; publish is typed away on 'in' rows
   qos?: 0 | 1;                            // default 0
   sample?: number;                        // 0–1 validation sampling knob; default 1 (validate-always)
+  /**
+   * Marks this a contracted error/status channel (KQ3: "a contracted
+   * error/status topic payload that validates on MQTT"). Runs only after
+   * `validate` succeeds — the choke-point order is unchanged, so an invalid
+   * payload on a reason-code channel is still class 2, quarantined, exactly
+   * as usual, and `select` never runs. On a successful validation, `select`
+   * extracts the reason code (and optional detail) from the validated
+   * payload; the boundary constructs a class-3 `ReasonCodeError`
+   * (`status: null` on this leg, `body` the selector's result) and emits it
+   * on the deduped telemetry wire. The channel's typed `message.*` event
+   * still fires on the discrete wire regardless — callers may consume
+   * either, or both. See Error modes.
+   */
+  reasonCode?: { select: (payload: Validated<T>) => { code: string | number; detail?: unknown } };
 }
 
 export interface CompiledValidator<T> {
@@ -464,21 +478,22 @@ export const customInstance = <T>(req: Parameters<BoundaryFetcher>[0],
 ### Invariants
 
 - **I1 — choke point (D-0006).** Nothing unvalidated crosses the interface. `message.*` payloads have passed their channel's compiled Ajv validator before emission; `fetcher` resolutions have passed their per-status zod schema. Everything delivered is `Validated<T>`-branded, and the ingress is the only place brands are applied.
-- **I2 — quarantine ≠ cache.** A rejected payload goes to the ring plus a deduped telemetry event and never appears on either wire nor as a `fetcher` resolution — so it can never become a TanStack Query cache entry (rejections are thrown, never returned).
-- **I3 — two wires, never crossed.** Connection state never appears in `BoundaryEmitted`; message payloads never appear in `BoundarySnapshot`. The types make crossing a compile error.
-- **I4 — one ingress per protocol.** Exactly one broker `onMessage` registration per instance; all REST crosses `fetcher`. oxlint `no-restricted-imports` bans `mqtt` and the raw generated client outside the package directory.
-- **I5 — below-the-seam purity.** The package never imports TanStack Query, not even type-only; `fetcher` never caches, retries, or dedups.
-- **I6 — symmetric choke point.** Outbound `publish` payloads validate against the same channel validator; a failing payload rejects class 2 before any network activity (compile-time typing via `PayloadOf` makes this a runtime backstop).
-- **I7 — ports are taxonomy-free.** Adapters deliver raw transport facts and never construct or receive `BoundaryError` values; classification lives above the ports.
-- **I8 — bounded everything.** Delivery, publish, and quarantine stores are count-bounded (the bounds mqtt.js does not have are owned here); overflow sheds oldest and emits a class-1 `queue-overflow` telemetry event; depths are observable on wire 2. mqtt.js's own unbounded queues are kept empty by gating above the adapter.
-- **I9 — lifecycle.** Construction is pure (no I/O, no timers). `start()` and `dispose()` are idempotent. After `dispose()`: snapshot is `ended`, wire silence, `publish`/`fetcher` reject class-1 `disposed`.
-- **I10 — every content type defined** (the ts-rest #789 lesson). An unparseable or unmapped body on either leg is class 4 (`undecodable` / `unknown-content-type`) + quarantine — never a silent validation skip.
-- **I11 — handler isolation.** A throwing wire-1 listener never skips sibling listeners and never re-enters the broker callback (the mitt hazard, designed out by the actor mailbox).
-- **I12 — no replay.** The quarantine ring is inspection only; a permanent schema mismatch stays broken.
+- **I2 — class-3 MQTT construction (`reasonCode` channels).** A `ReasonCodeError` is constructed on the MQTT leg only after its channel's `validate` succeeds — an invalid payload on a `reasonCode` channel is class 2, exactly like any other channel, and `select` never runs. Construction is additive, never substitutive: it emits on the deduped telemetry wire without suppressing the channel's `message.*` event on the discrete wire — the two-wire rule holds, and callers may consume either or both.
+- **I3 — quarantine ≠ cache.** A rejected payload goes to the ring plus a deduped telemetry event and never appears on either wire nor as a `fetcher` resolution — so it can never become a TanStack Query cache entry (rejections are thrown, never returned).
+- **I4 — two wires, never crossed.** Connection state never appears in `BoundaryEmitted`; message payloads never appear in `BoundarySnapshot`. The types make crossing a compile error.
+- **I5 — one ingress per protocol.** Exactly one broker `onMessage` registration per instance; all REST crosses `fetcher`. oxlint `no-restricted-imports` bans `mqtt` and the raw generated client outside the package directory.
+- **I6 — below-the-seam purity.** The package never imports TanStack Query, not even type-only; `fetcher` never caches, retries, or dedups.
+- **I7 — symmetric choke point.** Outbound `publish` payloads validate against the same channel validator; a failing payload rejects class 2 before any network activity (compile-time typing via `PayloadOf` makes this a runtime backstop).
+- **I8 — ports are taxonomy-free.** Adapters deliver raw transport facts and never construct or receive `BoundaryError` values; classification lives above the ports.
+- **I9 — bounded everything.** Delivery, publish, and quarantine stores are count-bounded (the bounds mqtt.js does not have are owned here); overflow sheds oldest and emits a class-1 `queue-overflow` telemetry event; depths are observable on wire 2. mqtt.js's own unbounded queues are kept empty by gating above the adapter.
+- **I10 — lifecycle.** Construction is pure (no I/O, no timers). `start()` and `dispose()` are idempotent. After `dispose()`: snapshot is `ended`, wire silence, `publish`/`fetcher` reject class-1 `disposed`.
+- **I11 — every content type defined** (the ts-rest #789 lesson). An unparseable or unmapped body on either leg is class 4 (`undecodable` / `unknown-content-type`) + quarantine — never a silent validation skip.
+- **I12 — handler isolation.** A throwing wire-1 listener never skips sibling listeners and never re-enters the broker callback (the mitt hazard, designed out by the actor mailbox).
+- **I13 — no replay.** The quarantine ring is inspection only; a permanent schema mismatch stays broken.
 
 ### Ordering constraints
 
-- **O1 — ingress pipeline order (fixed).** Inbound MQTT: dedup (messageId + topic) → policy-table match (mqtt-pattern, pre-parsed rows) → validate (compiled Ajv, synchronous) → bounded enqueue → emit. Dedup precedes validation so a protocol-legal duplicate can produce neither a second emission nor a second quarantine entry. Dispatch to listeners happens off the packet pump (bounded delivery queue + microtask), so slow consumers never starve keepalive (#1935); they surface as `depths.delivery` growth, then shedding.
+- **O1 — ingress pipeline order (fixed).** Inbound MQTT: redelivery dedup (messageId + topic — MQTT protocol-level, pre-validation; distinct from the caller-side TanStack Query *request* dedup that "below cache/retry/dedup" (Problem space, D-0006) refers to) → policy-table match (mqtt-pattern, pre-parsed rows) → validate (compiled Ajv, synchronous) → bounded enqueue → emit. Redelivery dedup precedes validation so a protocol-legal duplicate can produce neither a second emission nor a second quarantine entry. On a `reasonCode` channel, a successful validate additionally constructs the class-3 `ReasonCodeError` at this same emit step, onto the telemetry wire, alongside — not instead of — the `message.*` emission (see Error modes). Dispatch to listeners happens off the packet pump (bounded delivery queue + microtask), so slow consumers never starve keepalive (#1935); they surface as `depths.delivery` growth, then shedding.
 - **O2 — per-topic FIFO.** Wire-1 events for a given topic preserve post-dedup broker arrival order. No ordering is guaranteed across channels or across wires.
 - **O3 — interest before connect.** `subscribe()` calls made before `start()` (or while reconnecting) are applied at connect and resubscribed across reconnects; refcounts are exact — N subscribes need N releases before the broker-level unsubscribe.
 - **O4 — reconnect policy.** Bounded attempts (`maxAttempts` × backoff, timed on the ClockPort) → `degraded`; only an explicit `reconnect()` re-arms. While `reconnecting`, publishes queue (bounded); in `degraded`/`ended` they reject immediately class-1 `publish-gated` — gating is observable, never silent.
@@ -489,7 +504,8 @@ export const customInstance = <T>(req: Parameters<BoundaryFetcher>[0],
 
 - **`fetcher`** rejects only `BoundaryError`: class 1 (network / timeout / abort), class 2 (any body — 2xx included — failing its declared schema), class 3 (a declared non-2xx body that *parses* against its per-status schema; thrown so TanStack treats it as an error and never retries it), class 4 (undeclared status, unknown content type). Never a raw `ZodError`, Ajv array, or `TypeError`.
 - **`publish`** rejects only `BoundaryError`: class 1 (`publish-gated`, `queue-overflow`, `connection-lost`, `disposed`) or class 2 (egress validation). It throws a plain `Error` synchronously only on programmer error (unknown channel, `direction: 'in'` row).
-- **The MQTT wire never throws into callers.** Class 2 (Ajv failure) and class 4 (unknown topic / undecodable) become quarantine + telemetry, never `message.*` events; class 1 conditions surface as wire-2 state transitions plus telemetry, with connection failure *inferred* from close/offline timing because browsers hide many WebSocket errors.
+- **The MQTT wire never throws into callers.** Class 2 (Ajv failure) and class 4 (unknown topic / undecodable) become quarantine + telemetry, never `message.*` events; class 1 conditions surface as wire-2 state transitions plus telemetry, with connection failure *inferred* from close/offline timing because browsers hide many WebSocket errors. Reason-code channels are the one case where class 3 is also constructed on this leg — see below.
+- **Class 3 on the MQTT leg (`reasonCode` channels).** A channel whose policy row carries `reasonCode` still validates first — the choke-point order is unchanged, so an invalid payload on that channel is class 2 as usual, quarantined, and `reasonCode.select` never runs. On a successful validation, the boundary calls `select` on the validated payload and constructs a `ReasonCodeError` (`status: null` on this leg, `body` the selector's `{code, detail?}`), then emits it on the deduped telemetry wire — the same `actor.on('*', …)` tap classes 1/2/4 use — never thrown, consistent with "the MQTT wire never throws into callers" above. This is additive, not substitutive: the channel's typed `message.*` event still fires on the discrete wire with the full `Validated<T>` payload, so the two-wire rule holds and callers may consume the message, the telemetry-side `ReasonCodeError`, or both.
 - **Factory** throws a plain `Error` synchronously on invalid configuration (bad URL scheme, empty policy table, malformed channel key, non-positive bounds). Programmer errors sit outside the four-class taxonomy, which describes runtime traffic only.
 
 ### Performance notes
