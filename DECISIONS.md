@@ -109,3 +109,17 @@ D-0001 · D-0002 · D-0003 · D-0004 · D-0005 · D-0006 · D-0007 · D-0011
 **Why**: Smallest maintained org-backed base with runtime reporters/levels; the facade keeps a future swap cheap.
 **From**: tracks/0050-logging/report.md (user acceptance at the batched Wave 1 gate)
 **Affects**: 0050, 0010
+
+### D-0015: Accept 0060-transport-abstraction report
+**Date**: 2026-08-14
+**What**: Build — a thin owned `transport-boundary` package: an xstate 5.32.5 actor system over incumbent mqtt.js 5.15.2 as the MQTT/connection surface; 0010's orval-generated, mutator-wrapped client as the REST surface; TanStack Query 5.101.4 adopted outside the boundary as the REST server-state layer; mqtt-pattern 2.1.1 for topic matching; the four-class error taxonomy owned by `transport-boundary/errors`. Two-wire rule: discrete domain events leave via the typed `actor.on`/`emit()` surface; continuous state via `actor.subscribe` selector projection. RxJS 7.8.2 and Effect 3.22.1 are prior art only, not adopted; zodios eliminated (dormant).
+**Why**: No maintained OSS package occupies the unified MQTT+REST typed-boundary slot, and the composition keeps D-0006 validation below cache/retry/dedup so nothing unvalidated is ever cached.
+**From**: tracks/0060-transport-abstraction/report.md (user acceptance at the Wave 2 gate, 2026-08-14 — signaled by directing spikes for both tracks)
+**Affects**: 0060, 0070, 0050
+
+### D-0016: Accept 0070-state-concurrency report
+**Date**: 2026-08-14
+**What**: Build (patterns) + adopt (test tooling) — an owned Zustand↔xstate composition idiom and single-dispatch ingress kit with per-(topic, entity) monotonic guards on incumbents xstate 5.32.5 + zustand 5.0.15, with `AbortController`/`AbortSignal` propagation as the cancellation standard; adopt fast-check 4.9.0 (`fc.scheduler`) + @fast-check/worker 0.6.0 and `xstate/graph` in core xstate ≥5.20.0 (@xstate/test is npm-deprecated/v4-pinned). @xstate/store 4.2.3 is the named challenger, not adopted; p-queue 9.3.3 is the blessed residual coordination primitive. Entity ownership is partitioned (QueryCache vs Zustand/machine state) with invalidate-don't-set as the interim bridge; the server-issued ordering-stamp requirement is raised as a formal contract question via intake.
+**Why**: The composition carries no weak score on any high-weight rubric criterion and adds zero new runtime dependencies; stale-vs-fresh arbitration is undecidable client-side without a server-issued stamp, which no library can fix.
+**From**: tracks/0070-state-concurrency/report.md (user acceptance at the Wave 2 gate, 2026-08-14 — signaled by directing spikes for both tracks)
+**Affects**: 0070

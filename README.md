@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** Wave 2 reports drafted (0060, 0070) — next: user review and acceptance (D-0015, D-0016).
+> **Frontier:** Wave 2 accepted (D-0015, D-0016) — next: schedule spikes or the 0090 horizon scan.
 
 ## How it works
 
@@ -30,6 +30,6 @@ committing.
 | 0030-duplication-detection | Near-duplicate code detection and de-duplication reporting | accepted |
 | 0040-hooks-linting | React hooks anti-pattern lint coverage beyond the basics | accepted |
 | 0050-logging | Config- and runtime-controllable logging facade (sinks, levels, throttling) | accepted |
-| 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | report drafted |
-| 0070-state-concurrency | Composable Zustand+xstate patterns; race-condition prevention (Wave 2 — starts from 0010's accepted report) | report drafted |
+| 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | accepted |
+| 0070-state-concurrency | Composable Zustand+xstate patterns; race-condition prevention (Wave 2 — starts from 0010's accepted report) | accepted |
 | 0090-horizon-scan | "Anything else" discovery session | deferred |
