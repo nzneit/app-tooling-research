@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   parseEntries, checkIds, slugify, resolveAnchor, checkLinks,
   parseIndexRows, checkIndex, checkTrackDirs, checkReports, checkIntake,
-  stripFenced, checkFrontier,
+  stripFenced, checkFrontier, isTrackReport,
 } from "./check-docs.ts";
 import type { Entry } from "./check-docs.ts";
 
@@ -127,4 +127,10 @@ test("checkReports ignores fenced headings before the real summary", () => {
 test("checkFrontier requires the frontier line", () => {
   assert.deepEqual(checkFrontier("> **Frontier:** do the thing"), []);
   assert.equal(checkFrontier("no frontier here").length, 1);
+});
+
+test("isTrackReport matches only tracks/<dir>/report.md", () => {
+  assert.ok(isTrackReport("tracks/0060-transport-abstraction/report.md"));
+  assert.ok(!isTrackReport("tracks/0010-contract-pipeline/spikes/orval-wrap/report.md"));
+  assert.ok(!isTrackReport("tracks/0010-contract-pipeline/draft-report.md"));
 });

@@ -6,8 +6,8 @@
 
 Two validator maintenance items flagged by the final review as fix-before-spikes (both one-line changes in `scripts/check-docs.ts`):
 
-1. Narrow the report check's path match from `endsWith("report.md")` to exactly `tracks/<dir>/report.md`, so future `tracks/*/spikes/*/report.md` and `draft-report.md` files are not falsely policed for an STE summary.
-2. Add `intake/` to the link-checked file set (`linkedDocs` in `main()`) — intake files accumulate path references.
+1. Narrow the report check's path match from `endsWith("report.md")` to exactly `tracks/<dir>/report.md`, so future `tracks/*/spikes/*/report.md` and `draft-report.md` files are not falsely policed for an STE summary. — done 2026-08-14
+2. Add `intake/` to the link-checked file set (`linkedDocs` in `main()`) — intake files accumulate path references. — done 2026-08-14
 
 Deferred validator hardening that can ride indefinitely (all confirmed loud-fail or unreachable in the current corpus): titled/reference-style link forms, bare `#fragment` links, date-led index-row overmatch, markdown-linked track cells, dangling-symlink ENOENT, 4-backtick nested fences, anchor-fragment test coverage.
 

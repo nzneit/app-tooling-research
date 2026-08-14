@@ -166,6 +166,12 @@ export function checkTrackDirs(dirs: string[]): string[] {
     .map((d) => `tracks/${d}: must match NNNN-kebab-slug (four-digit zero-padded prefix)`);
 }
 
+// Only a track's own top-level report is policed for the STE summary —
+// not spike reports or drafts (close-out item 1, 2026-08-13).
+export function isTrackReport(path: string): boolean {
+  return /^tracks\/[^/]+\/report\.md$/.test(path);
+}
+
 // Every report opens with the STE summary (D-0007): first H2 is "Summary (STE)".
 export function checkReports(files: { path: string; text: string }[]): string[] {
   const errs: string[] = [];
@@ -234,8 +240,9 @@ function main(): void {
     { path: "DECISIONS.md", text: read("DECISIONS.md") ?? "" },
     ...listMarkdown("facts"),
     ...listMarkdown("tracks"),
+    ...listMarkdown("intake"),
   ];
-  const reports = listMarkdown("tracks").filter((f) => f.path.endsWith("report.md"));
+  const reports = listMarkdown("tracks").filter((f) => isTrackReport(f.path));
 
   const intakeAbs = join(ROOT, "intake");
   const intakeFiles = existsSync(intakeAbs)
