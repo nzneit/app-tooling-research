@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **No AI attribution in any commit message** — no `Co-Authored-By`, no "Generated with" lines. Applies to every implementer; carry it in every brief.
-- Before **every** commit: `node scripts/check-docs.ts` passes AND `node --test scripts/` passes (runs check-docs.test.ts + new-spike.test.ts once Task 3 lands).
+- Before **every** commit: `node scripts/check-docs.ts` passes AND `node --test scripts/*.test.ts` passes (runs check-docs.test.ts + new-spike.test.ts once Task 3 lands).
 - **Spike isolation (spec):** each spike is a standalone npm package — own exact-pinned `package.json` + committed `package-lock.json`; no npm workspaces; no imports from repo root, other spikes, or other tracks (duplicate helpers instead); `node_modules/` never committed; repo root `package.json` stays dependency-free.
 - **Version pins:** report-surveyed packages install at their surveyed versions — mqtt@5.15.2, xstate@5.32.5, mqtt-pattern@2.1.1, @tanstack/react-query@5.101.4, zustand@5.0.15, fast-check@4.9.0, @fast-check/worker@0.6.0, orval@8.24.0. Everything else installs `--save-exact` at current latest; resolved versions land in the lockfile and, for load-bearing tools, in findings.md.
 - **OSS-only** spike dependencies (D-0003 spirit; installing a dev tool in a spike is not an adoption).
@@ -207,7 +207,7 @@ Replace the frontier line with:
 > **Frontier:** Wave 3 in progress — spike harness + 0060/0070 spikes (D-0017).
 ```
 
-- [ ] **Step 5: Validate and commit** — `node scripts/check-docs.ts` (17 decisions) and `node --test scripts/`, then:
+- [ ] **Step 5: Validate and commit** — `node scripts/check-docs.ts` (17 decisions) and `node --test scripts/*.test.ts`, then:
 
 ```bash
 git add .claude DECISIONS.md README.md
@@ -447,7 +447,7 @@ if (import.meta.main) {
 }
 ```
 
-- [ ] **Step 5: Run tests to verify all pass** — `node --test scripts/` → 26 pass (22 + 4).
+- [ ] **Step 5: Run tests to verify all pass** — `node --test scripts/*.test.ts` → 26 pass (22 + 4).
 
 - [ ] **Step 6: Scaffold both spikes for real:**
 
@@ -521,7 +521,7 @@ git commit -m "feat(0060): boundary-wiring interface design (design-it-twice pan
 
 - [ ] **Step 3: `npm test` + `npm run typecheck` green; update findings.md rows** (verdict + evidence per check; Status: `in progress`).
 
-- [ ] **Step 4: Validate repo (`node scripts/check-docs.ts`, `node --test scripts/`) and commit:**
+- [ ] **Step 4: Validate repo (`node scripts/check-docs.ts`, `node --test scripts/*.test.ts`) and commit:**
 
 ```bash
 git add tracks/0060-transport-abstraction/spikes/boundary-wiring
