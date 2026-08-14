@@ -151,3 +151,10 @@ D-0001 · D-0002 · D-0003 · D-0004 · D-0005 · D-0006 · D-0007 · D-0011
 **Why**: The failure mode is a silent false negative in the layering lint that D-0002/D-0006 depend on; the mitigation is proven twice and cheap.
 **From**: both Wave 3 spike findings (user call at the Wave 3 gate)
 **Affects**: 0040, 0060, 0070, and any future oxlint config
+
+### D-0021: Add track 0100-type-strictness (enforcement under agentic churn)
+**Date**: 2026-08-14
+**What**: New research track 0100-type-strictness: how to raise TypeScript strictness from the app's very loose baseline (TS 5.9.3) and enforce it in a codebase that receives a high volume of agent-authored code. It owns the design the 0090 type-coverage area left gated: the resolved strictness fact selects the allowlist-first branch of 0090's decision rule, and 0090's direct-adopt of type-coverage 2.30.1 becomes an input to this track rather than a finished wiring. Scope includes gaming-resistant ratchet design (diff-scoped vs global-metric), suppression-insertion gates, boundary type-anchoring on the 0010/0060 contract types, and how the result composes with the 0020/0030 ratchets into one agent-resistant quality gate. Side effect: 0090's proposed future tracks would mint as 0110 (React Compiler) and 0120 (e2e browser testing).
+**Why**: User directive 2026-08-14, alongside the new app facts (React 18.3.1, TypeScript 5.9.3, very loose strictness); a high volume of buggy agent-authored code is a standing pressure the program's enforcement designs must survive, and a one-tool adoption cannot answer it.
+**From**: user directive 2026-08-14; intake/2026-08-14-0090-app-facts.md item b resolution
+**Affects**: 0090, 0100, and the ratchet designs from 0020/0030
