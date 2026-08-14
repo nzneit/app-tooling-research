@@ -62,7 +62,7 @@ is non-blocking but decides which adapter package (if any) is added.
 ## h — xstate and Zustand major versions in production
 
 Is the app's xstate already on v5 (actors/`emit`/`setup`), and can it move within-v5 to
-≥5.20.0? Is Zustand on v4 or v5? 0060's A-1 and 0070's A-1/A-4/A-5 all depend on this — a v4
+≥5.20.0? Is Zustand on v4 or v5? 0060's A-1 and 0070's A-4/A-5 all depend on this — a v4
 xstate app invalidates the "zero marginal dependency cost" argument that the whole
 architecture rests on, and `xstate/graph` needs ≥5.20.0.
 
@@ -74,7 +74,7 @@ and optimistic UI stays entirely in the Key question 5 rollback unit.
 ## j — mqtt.js session and QoS settings in production
 
 Does the app run `clean: true` sessions, QoS 0/1, `resubscribe: true`, and
-`queueQoSZero: true` (mqtt.js's documented defaults)? 0060's A-3/A-5 and 0070's A-6 assume
+`queueQoSZero: true` (mqtt.js's documented defaults)? 0060's A-5 and 0070's A-6 assume
 these hold; a `clean: false` or QoS 2 deployment changes the dedup-guard and gap-fill design
 in both reports.
 
