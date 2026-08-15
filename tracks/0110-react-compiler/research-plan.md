@@ -23,11 +23,18 @@ eslint-plugin-react-hooks 7.x; this track does not revisit that.
 
 ## Key questions
 
-1. **Install path** — with the build tool unverified (Vite, webpack, rspack, and
-   Rolldown all integrate differently, and Rolldown now exposes an Oxc-native alternative
-   to the Babel plugin), which integration point is actually reachable? Does the
+1. **Install path** — the build tool is confirmed **Vite** (facts/app-profile.md), so the
+   question narrows to a binary fork on version. `@vitejs/plugin-react` **6.0.0+ requires
+   Vite 8+ and carries no internal Babel**, so the compiler wires through
+   `@rolldown/plugin-babel` with `reactCompilerPreset`; **5.x and earlier bundles Babel**
+   (peer range Vite 4.2–7.x) and uses the legacy `react({ babel: { plugins: [...] } })`
+   option. Vite 8 shipped 2026-03-12, Vite 7 mid-2025, Vite 6 late 2024, so any of three
+   majors is plausible. The two version facts are asked as intake
+   [2026-08-14-version-gates](../../intake/2026-08-14-version-gates.md) items a and b —
+   Node gates this too, since Vite 7 dropped Node 18. Remaining for the survey: does the
    pseudo-monorepo's tsconfig-paths-only resolution break the compiler's module-boundary
-   assumptions anywhere?
+   assumptions anywhere, and does the alias plugin (`vite-tsconfig-paths`, required on any
+   Vite ≤7) interact with the Babel pass?
 2. **React 18 config burden** — `react-compiler-runtime` plus an explicit `target: '18'`
    is mandatory for React 18.3.1. Who keeps the runtime version and target string in
    sync, and what breaks if they drift — a build error, or a silent no-op?

@@ -51,7 +51,17 @@ own the app's `typescript` upgrade to 7.x.
    buildable but not off-the-shelf — the CLI reports one aggregate, while
    `type-coverage-core` exposes per-file counts via `lint(project, { fileCounts: true })`
    for bucketing by directory prefix. Is that worth owning, or does diff-scoping remove
-   the need for it?
+   the need for it? **2026-08-14 — scale sharpens this toward a decision.** At ~150,000 LOC
+   (facts/app-profile.md) a global percentage has a **dilution problem**: one new sloppy
+   agent-authored file barely moves a ratio over a 150k-line denominator, so an aggregate
+   gate cannot see the very thing this track exists to catch, while a per-file list flags it
+   immediately with no size-dependent dilution. The likely shape is therefore
+   **type-coverage for the trend, a file list for the blocking gate** — which the survey
+   should try to falsify rather than assume. Two mechanical constraints to carry:
+   TypeScript's `strict` is tsconfig-global with no native per-file toggle, so "per-file
+   allowlist" means a second scoped tsconfig or blanket-strict with per-file suppressions
+   removed incrementally; and `type-coverage --cache` only helps if the cache survives
+   between CI runs, or every commit pays a cold full-program pass on top of `tsc`'s own.
 3. **The agent-authored failure modes, named and countered** — which of these does each
    candidate mechanism actually detect, and which does it score as an improvement?
    (a) **Declaration-site widening**: changing a field to `unknown`, adding an index

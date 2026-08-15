@@ -107,6 +107,31 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 > remedy — `ignoreDependencies: ["@appname/.*"]` — is itself a one-line blanket
 > suppression that would silence real undeclared-dependency findings across the whole
 > scope. Document it as a last resort; do not pre-enable it.
+>
+> **Third update, 2026-08-14 (post-acceptance) — a scale risk against this adopted
+> recommendation, recorded honestly rather than buried.** The app is **~150,000 LOC**
+> (facts/app-profile.md). The nearest real data point is
+> [knip#1435](https://github.com/webpro-nl/knip/issues/1435): a **~121,370 LOC** codebase
+> where knip took 1–1.5 hours and hit out-of-memory **even at
+> `--max-old-space-size=24576` (24 GB)**; the issue is **closed as "not planned"**, treated
+> as discussion rather than a defect. That failure occurred ~24% *below* this app's size.
+>
+> **The shapes differ, and the difference could cut either way.** That report is a
+> *multi-package workspace monorepo* (`packages/*`, `packages/snappables/*`), where knip
+> analyses each workspace separately; this app is a single-manifest integrated monorepo that
+> knip treats as exactly **one** workspace, which is plausibly far cheaper. So this is a
+> flagged risk, not a predicted failure — and it is precisely the class D-0001 says desk
+> research cannot settle. It belongs in a spike.
+>
+> What makes it sharp rather than academic is that **the usual mitigation is unavailable**.
+> GitHub-hosted standard runners are 4-core/16 GB for public repos and **2-core/8 GB for
+> private ones** ([runner specs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)) —
+> against a documented failure that needed more than 24 GB. Larger runners bill per minute
+> with no free allowance, which D-0003 excludes. So if knip does struggle here, the fix must
+> be architectural — scoped `include` globs, project-reference sharding, or moving knip off
+> the every-commit path to a scheduled advisory run — not a bigger machine. The adoption
+> stands; the **first spike question is now "does it complete, and in what memory," before
+> "is the config clean."**
 
 **Bus factor is the one clear weakness.** Knip is maintained by a single person, Lars Kappert ([@webpro](https://github.com/webpro)), and [GitHub Sponsors data](https://github.com/sponsors/webpro) shows a monthly aggregated average around $520 — thin funding for a tool this widely depended on. Release cadence and issue responsiveness are currently strong (14 open issues at last check, near-weekly releases), so there's no near-term maintenance red flag, but a CI gate this load-bearing carries real single-maintainer risk that the two archived predecessors (each also effectively single-maintainer) illustrate isn't hypothetical.
 

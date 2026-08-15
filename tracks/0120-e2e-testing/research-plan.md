@@ -91,6 +91,12 @@ strong / adequate / weak with a sentence of evidence (spec: "Shared evaluation r
 - Confirm the test framework is vitest, and whether it already resolves tsconfig `paths` via a plugin an e2e runner's bundler could reuse
 - Build tool — decides whether a runner can boot a dev server through its built-in `webServer`/`devServer` config or needs a custom launch script
 - CI provider, runner type, and parallel worker budget — sizes sharding for a suite with no affected-package selection
-- Which browsers are actually supported in production (an internal Chromium-only tool versus Firefox and Safari too) — decides whether tri-engine coverage is a requirement or overkill
+- ~~Which browsers are actually supported in production~~ — **resolved: Firefox ~124 and
+  Chromium latest to latest-minus-2. No Safari, no WebKit** (facts/app-profile.md). This
+  removes a differentiator rather than adding a requirement: Playwright's WebKit project and
+  WebdriverIO's Safari-driving advantage both fall out of the decision entirely, so the
+  runner choice turns on WSS interception, alias resolution, and CI cost instead. Firefox
+  ~124 is an older floor and worth confirming as a genuine support target rather than a
+  stale entry
 - Whether any environment runs the app against a real MQTT broker over WSS with TLS that CI could reach, versus only the in-process aedes harness
 - How 0010's factories and 0090's MSW handlers are packaged (importable fixtures versus test-local definitions) — decides whether e2e reuses them directly or needs an adapter

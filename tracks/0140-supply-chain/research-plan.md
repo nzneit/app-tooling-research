@@ -60,9 +60,21 @@ provides.
    Dependabot's or Renovate's update PRs and grouping rules work correctly against this
    layout? Does merging an update PR count as remediation on its own, or must the scanner
    re-run and confirm?
-9. **Fit with an unknown CI provider** — which candidates' output (SARIF, plain JSON, or
-   exit code only) integrates without assuming GitHub-native features, and does the answer
-   change if CI turns out to be GitHub Actions specifically?
+9. **Reporting path under GitHub Actions — and a confirmed paid-tier trap.** CI is
+   **GitHub Actions** (facts/app-profile.md), which settles part of this and sharpens the
+   rest. **Code scanning, the destination that makes SARIF valuable, is free on public
+   repositories and requires the paid Code Security / Advanced Security add-on on private
+   ones**, so on a private app repo the SARIF advantage credited to OSV-Scanner, Trivy, and
+   dependency-cruiser is **unusable under D-0003**. Repo visibility is asked as intake
+   [2026-08-14-version-gates](../../intake/2026-08-14-version-gates.md) item c. The same gate
+   catches `dependency-review-action`, which is easy to mistake for a free Dependabot feature
+   and is not. So: which candidates degrade gracefully to the reporting primitives that are
+   free on every plan — exit codes, `$GITHUB_STEP_SUMMARY` job summaries, `::error`/`::warning`
+   workflow-command annotations, and PR comments via the default `GITHUB_TOKEN` — and does any
+   candidate's value collapse without the alerts UI (dismissal workflow, cross-run
+   deduplication)? **Retired by this same research**: Dependabot alerts, security updates, and
+   version updates are documented as included on every plan for every repository and sit
+   outside Advanced Security, so Dependabot does not share the paywall.
 
 ## Candidates
 
