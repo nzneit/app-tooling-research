@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** 0090 accepted (D-0022) — five adoptions, four new tracks minted (0110–0140, all `planned`); next: the 0100 plan revision goes to the user for its go gate, then its survey starts. Open: the build-tool fact (intake 0090 item a), the 0100 intake, and the D-0019 ordering stamp with the contract owners.
+> **Frontier:** six research plans drafted and awaiting the user's go gate — 0100 (revised), 0110–0140, and the meta track 9900 (D-0025). Open rulings: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, 9900's dependency-envelope and ceremony-budget rulings, and the D-0019 ordering stamp with the contract owners.
 
 ## How it works
 
