@@ -1,6 +1,6 @@
 # 9900-process-design — research plan
 
-**Status**: surveying
+**Status**: draft
 
 ## Goal
 
@@ -205,7 +205,10 @@ resolved 2026-08-14):
 - The seed corpus in [seed-defect-corpus.md](seed-defect-corpus.md), already gathered
 - The offbook prior art in [prior-art-offbook.md](prior-art-offbook.md), already gathered
   (2026-08-15). Note one consequence for the survey's framing: this track's founding premise —
-  that the validator and the defects live in different places — is now **twice-observed
-  independently**, since an offbook review round reached the same conclusion in its own words
-  about its own corpus. The survey should treat that premise as established and spend its
-  effort on what follows from it, not on re-arguing it
+  that the validator and the defects live in different places — is **observed in a second
+  corpus**, since an offbook review round reached the same conclusion in its own words about its
+  own documents. The survey should treat that premise as established and spend its effort on
+  what follows from it, not on re-arguing it. (Corrected 2026-08-15: an earlier version of this
+  line called it *twice-observed independently*. Offbook is the same author's repo, so it
+  corroborates rather than independently confirms — recorded as assumption A-7 of this track's
+  report.)

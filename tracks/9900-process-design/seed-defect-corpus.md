@@ -232,6 +232,29 @@ never acknowledged back to the user. So the derived artifact was right while the
 truth was self-contradictory — the inverse of the usual drift direction, and a reminder that
 propagating a change is not the same as closing it out.
 
+## L. A status field that looks authoritative and is dead
+
+Found 2026-08-15, by trying to use it. Every `tracks/*/research-plan.md` opens with a
+`**Status**` line. All fourteen say `draft` — including the eight tracks whose reports are
+accepted. Nothing updates it, nothing reads it, and `check-docs.ts` does not validate it; the
+`STATUSES` list the validator does enforce (`planned`, `surveying`, `report drafted`,
+`accepted`, `deferred`) applies to the README track table, which is the real index.
+
+The defect is not the staleness, it is the **false affordance**. An agent setting a plan's
+status to `surveying` at the start of a survey is doing the obviously correct thing, and it
+silently makes that one file diverge from thirteen siblings — which is the sibling-drift class
+this track exists to study, produced *by* following the document's own apparent convention. That
+happened during this track, was caught by reading the siblings, and was reverted.
+
+Two things make this worth recording rather than just fixing. It is a **second instance of the
+category-H shape** — an artifact whose affordance points somewhere the process does not go — and
+category H was about a missing affordance while this one is about a misleading one, so the pair
+suggests the general defect is *affordance and practice disagreeing*, in either direction. And
+the cheap repair is not obvious: deleting the field, wiring it to the README, or documenting it
+as document-state rather than track-state are three different answers with different costs, and
+this is exactly the kind of change the report's N=0 finding applies to — the research-plan
+template has **zero remaining authorings** ahead of it, so changing it propagates into nothing.
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got

@@ -87,8 +87,11 @@ Three usable instances.
    inline warning that a worked example must not be pasted into the file, because the checker
    parses the heading-plus-UID shape and would count the example as a real requirement. This
    is the same failure this repo hit when a link check fired on markdown syntax quoted inside
-   inline backticks. Two independent repos, same root cause: **a checker cannot distinguish
-   an instance from a mention.** That elevates it from an incident to a category.
+   inline backticks. Two corpora, same root cause: **a checker cannot distinguish an instance
+   from a mention.** That is a second instance rather than a second observer (same author —
+   see the correction above), but the two checks were written years and languages apart for
+   different purposes, so the recurrence is still evidence that the failure is structural
+   rather than a one-off slip.
 2. **An explicit severity rule.** Two of the 2026-08-07 resolutions reason directly about
    warn versus refuse, and reach *opposite* conclusions on stated grounds. Refuse, for a
    command that silently returned demo data: "a marker protects only consumers who check it,
@@ -113,9 +116,15 @@ ranked top gaps with one CRITICAL. The round's own summary sentence:
 > Nothing is checker-detectable (`check-docs` exits 0); everything below is design-level.
 
 That is 9900's opening premise, stated in another repo, about a different corpus, before this
-track existed. It is the single most useful thing in this document: the finding that the
-validator and the defects live in different places is now **twice-observed independently**,
-which is a materially stronger basis than one repo's history.
+track existed.
+
+**Corrected 2026-08-15, by the survey this file seeded.** An earlier version of this paragraph
+called that a **twice-observed independent** confirmation. It is not, and the overclaim was
+this file's. Offbook is the **same author's** repo, so a convention appearing in both
+corroborates a design rather than confirming it independently — a shared author can carry a
+shared blind spot into both corpora, which is exactly what independence is supposed to rule
+out. The observation is still worth having: it is a second corpus, of a different kind, at a
+different stage. It is not a second observer.
 
 Note also that the two reviews were **differently framed** (adversarial critique versus
 structured FMEA) rather than two runs of the same lens, and their outputs did not fully
