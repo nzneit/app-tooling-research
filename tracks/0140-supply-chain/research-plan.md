@@ -90,6 +90,35 @@ provides.
    then the reported configuration difficulty has a concrete cause and the choice makes itself.
    Whatever the ruling, the track should name an OSS path regardless, so the program does not
    become dependent on a licence it does not control.
+
+   **2026-08-14 — the hypothesis was right, and then it got more interesting.** Snyk's
+   published support covers **npm, Yarn, and pnpm only**; a full-text search of its entire
+   docs corpus returns **zero** occurrences of bun. On a bun-only repo `snyk test` finds no
+   manifest it can read — it does not even degrade to scanning `package.json`. So the reported
+   difficulty is a **genuine format incompatibility, not a skills gap**, and the community
+   workaround (generate a throwaway `package-lock.json` via `npm install --package-lock-only`)
+   scans a *near-neighbour of production* rather than what bun actually installed — which
+   would also violate the single-lockfile property Key question 6 exists to protect.
+
+   **But a working Bun resolver already ships inside the CLI binary, behind an undocumented
+   flag.** Source inspection of Snyk's public `cli-extension-dep-graph` repo shows a complete,
+   tested bun resolver merged 2026-04-22, with a daily CI job that installs the latest Bun
+   nightly to catch breakage — maintained engineering, not an abandoned spike. It is pinned
+   into the released CLI, so the code is physically present in the binary shipping today, but
+   registered behind the internal, org-scoped feature flag `internal-bun-resolver` with no
+   self-service way to enable it, no changelog mention, and no documentation. It works by
+   shelling out to `bun why` rather than parsing `bun.lock`, so it needs Bun ≥ 1.2.19 on PATH
+   — which self-hosted runners for a bun repo already have.
+
+   **This changes the practical next step from a tool decision to a support question**: ask
+   Snyk's account team whether `internal-bun-resolver` can be enabled for this organisation.
+   That is cheap, and the answer determines whether "configure what you own" is even
+   available. Two caveats to carry: it is unconfirmed whether enabling it also lights up the
+   Git/SCM scanning path or only CLI and IDE; and although the CLI repos are Apache-2.0,
+   Snyk's own contributing guide distinguishes the default **private build "including
+   proprietary extensions"** from a public OSS build, so the shipped binary is not reproducible
+   from public source and the SaaS backend is proprietary regardless — relevant to how ruling
+   (i) or (iii) would treat it.
 6. **No-fix and transitive-only findings** — what disposition applies to advisories with
    no available fix or that are transitive-only: block, warn with expiry, or report only?
    Who re-triages when a fix later ships, so the gate does not simply get suppressed?
@@ -128,12 +157,27 @@ format is widely supported — so this repo sits on the workable side and **no l
 migration is needed before the track can proceed**. The five eliminations below still stand:
 they fail on requiring an npm- or yarn-shaped lockfile, which no bun format satisfies.
 
-**A standing hazard for every surviving candidate.** A scanner that cannot parse the lockfile
-tends to report **zero findings rather than an error**, which is indistinguishable from a
-clean repository. This is documented, not hypothetical — Grype v0.110.0 did exactly that on a
-bun.lock. So minimum-version pinning, and a positive assertion that the scanner actually read
-the file (a parsed-package count, not merely a zero exit code), are part of any
-recommendation this track makes rather than an operational afterthought.
+**Two distinct silent-failure modes, and no single tool guards both.** This is the sharpest
+structural finding for the track, because both modes produce the identical output — zero
+findings — that a genuinely clean repository produces.
+
+1. **The scanner could not parse the lockfile.** Documented, not hypothetical: Grype v0.110.0
+   did exactly this on a bun.lock. **OSV-Scanner is the only candidate with a built-in guard**
+   — exit code 128 for "no packages found", distinct from 0 for clean. Grype and Syft skip
+   malformed entries silently *by design*, so they need an external parsed-package assertion
+   regardless of version.
+2. **The database was stale.** Under the preferred offline periodic-sync model, a missed sync
+   is invisible. **Grype is the only candidate that guards this by default** — it hard-fails
+   once its database passes five days old (`MaxAllowedBuiltAge` 120h with `ValidateAge` on).
+   Trivy exposes database timestamps via `trivy version --format json` so a custom gate can be
+   built. **OSV-Scanner exposes nothing queryable at all**, making the tool with the best
+   parse-failure guard the weakest on staleness.
+
+So the two leaders guard opposite failures, and the tool that is strongest on bun.lock parsing
+is weakest on the operating model the organisation actually prefers. The track should treat
+"which single scanner" as possibly the wrong question, and evaluate whether a composition — or
+one scanner plus two explicit CI assertions — is the honest recommendation. Whatever wins,
+**both guards must be present**, because either failure alone yields a confident green build.
 
 **Live candidates:**
 

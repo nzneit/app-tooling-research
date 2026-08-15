@@ -102,11 +102,20 @@ alongside the OSS candidates and may recommend "configure what you already own".
 the *only* recommendation: the track must also name an OSS path, so the program never
 becomes dependent on a licence it does not control.
 
-Worth knowing while deciding: you said you are "not really married to it", and the reported
-difficulty configuring Snyk for this repository may have a concrete cause rather than a
-skills one — the repo is bun-only, and bun lockfile support is exactly where most scanners
-draw their line. That is under verification. If Snyk cannot parse `bun.lock`, ruling (i) and
-(ii) converge on the same practical answer.
+**2026-08-14 — verified, and the answer is two-sided, so the rulings do *not* converge.**
+Snyk's published support is npm, Yarn, and pnpm only; its entire docs corpus contains zero
+mentions of bun, and on a bun-only repo `snyk test` finds no manifest it can read. So the
+configuration difficulty is a **format incompatibility, not a skills gap** — that much is
+settled. But a complete, tested **Bun resolver already ships inside the Snyk CLI binary**,
+behind an undocumented org-scoped feature flag (`internal-bun-resolver`), maintained well
+enough to have a daily CI job tracking Bun releases. It is not self-service and appears in no
+changelog or doc.
+
+So there is a live third possibility the ruling should account for: **ask Snyk's account team
+to enable the flag.** That is a cheap question with a large payoff, and it is not something
+you could have found unaided. If they say yes, "configure what you already own" becomes a
+real option and the ruling genuinely matters. If they say no, options (i) and (ii) do
+converge after all. Either way the answer arrives faster than the survey would.
 
 → Resolution: the ruling → allocates a `D-####` refining D-0003's boundary, and sets whether
 0140 evaluates Snyk at all
