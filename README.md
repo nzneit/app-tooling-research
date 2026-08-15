@@ -12,6 +12,9 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 
 ## How it works
 
+Track numbers run in two bands: **00xx–09xx** for tracks about the application's tooling,
+and **99xx** for meta tracks about this repo's own research machinery (D-0025).
+
 Each track lives in `tracks/NNNN-<slug>/` and moves through one lifecycle:
 `research-plan.md` (key questions, candidates, rubric weights) → `report.md` (source-linked
 survey + recommendation: **adopt / adopt + wrap / build / skip**, opening with an
@@ -45,3 +48,4 @@ in `findings.md` — the durable artifact.
 | 0120-e2e-testing | End-to-end browser testing of the live MQTT-over-WSS and reason-code REST flows (D-0022) | planned |
 | 0130-accessibility-linting | Static + automated accessibility checking for the React UI (D-0022) | planned |
 | 0140-supply-chain | Dependency vulnerability and supply-chain auditing (D-0022) | planned |
+| 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | planned |
