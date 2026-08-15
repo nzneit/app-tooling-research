@@ -36,10 +36,17 @@ structure, or the shared rubric; those are a separate and larger track.
    (`A-1`, `I-5`, "invariant 3") that drift when numbering moves; citations pointing into
    git-ignored trees; a `D-####` entry that contradicts the report it cites. Which of these
    are mechanically decidable, and which only look decidable?
-2. **Net process cost** — what does each proposed control cost per track in authoring time,
-   review time, and agent tokens, and what is the **net** change in mandatory steps? Which
-   existing steps could be retired, merged, or time-boxed to pay for new ones? This question
-   has veto power over the others: a control that cannot be priced does not ship.
+2. **Net process cost** — the target is set: **net steps hold** (intake item b, 2026-08-14).
+   Additions are allowed only where offset, and an exception needs a compelling *and
+   reviewed* justification — reviewed meaning someone other than the proposer agrees, not
+   merely a confident rationale. So what does each proposed control cost per track, and what
+   must be retired, merged, or time-boxed to pay for it? This question has veto power over
+   the others: a control that cannot be priced does not ship, and a control with no offset
+   named does not ship either. One sub-question the ruling left open and the survey should
+   resurface with concrete examples rather than guess: **which cost actually matters** —
+   wall-clock, human review time, or agent token spend. They trade against each other, and a
+   check that runs in milliseconds while producing findings a human must adjudicate is cheap
+   in one and expensive in another.
 3. **Detector trust and false positives** — for each proposed check, what is its
    false-positive profile, and what happens when it cries wolf? A noisy validator gets
    disabled or routinely overridden, which is worse than no validator — and in a repo where
@@ -109,12 +116,23 @@ classes visibly separate rather than scoring them on one table.
 - MADR and ADR tooling (adr-tools, log4brains) — https://adr.github.io — decision-record conventions, including supersession and status lifecycles the ledger currently handles by prose
 - Scaffolding tools (plop, degit, cookiecutter) versus the hand-rolled `new-spike.ts`
 
-**Gating constraint on every tool candidate**: the spike-harness spec states the root
-`package.json` stays dependency-free and the validator stays zero-dep, and the root manifest
-today declares no dependencies of any kind. Whether that bars a CI-installed binary that is
-not an npm dependency at all (Vale and lychee are both standalone binaries) is **unresolved
-and is a constraint decision, not a tool comparison** — see intake item a. No tool
-recommendation can be made before it is answered.
+**Gating constraint on every tool candidate — resolved, and it changes the question.**
+D-0027 rules that the dependency envelope is a **four-rung ladder, strict by default**:
+rung 0 an in-house `check-docs.ts` extension on Node's standard library; rung 1 an npm
+dependency, for things that do not make sense to roll ourselves; rung 2 a binary in CI but
+not pre-commit, where we truly cannot live without the tooling; rung 3 a binary every
+contributor installs, only where in-house replication is impractical *and* rung 2's CI cost
+would be too great. Climbing a rung requires justification.
+
+So no tool is eliminated on constraint, and none is admitted by default. The survey question
+for each tool candidate becomes: **can this be replicated in-house at acceptable fidelity,
+and if not, which is the lowest rung that works?** Two predictions the survey should test
+rather than assume: external link checking looks like a strong rung-0 candidate, since
+Node's built-in `fetch` makes a link-resolution check a small addition to the existing
+validator, which would retire lychee on merit; and Vale is the case the ladder was written
+for, since sentence length and voice are mechanically checkable in-house while "one word for
+one meaning" plausibly is not, and the ASD-STE100 dictionary's redistributability is itself
+unsettled.
 
 ## Rubric weights
 
@@ -138,10 +156,15 @@ a technique, and the report says so rather than inventing scores.
 ## Facts needed
 
 This track studies the repo itself, so it depends on no `facts/app-profile.md` fields. Its
-inputs are internal and two of them need the user's ruling
-([intake 2026-08-14-9900-process-scope](../../intake/2026-08-14-9900-process-scope.md)):
+inputs are internal, and the two rulings it needed are now in hand
+([intake 2026-08-14-9900-process-scope](../../intake/2026-08-14-9900-process-scope.md),
+resolved 2026-08-14):
 
-- Whether "dependency-free root" bars a CI-installed standalone binary — gates every tool candidate (intake item a)
-- The tolerable per-track ceremony budget, and whether the user wants net steps to fall, hold, or may rise (intake item b)
-- Whether CI exists for this repo today, or whether `check-docs.ts` runs only pre-commit — decides whether any proposed check has a place to run
+- **Resolved** — the dependency envelope is a four-rung ladder, strict by default (D-0027)
+- **Resolved** — the budget is **net steps hold**, exceptions need a reviewed justification
+- **Still open, non-blocking** — which cost unit the budget is really denominated in
+  (wall-clock, human review time, or agent tokens); the survey resurfaces this with examples
+- **Still open** — whether CI exists for this repo today, or whether `check-docs.ts` runs
+  only pre-commit. This now matters more than it did: D-0027's rungs 2 and 3 differ precisely
+  on where a tool runs, so a repo with no CI collapses the ladder to rungs 0, 1, and 3
 - The seed corpus in [seed-defect-corpus.md](seed-defect-corpus.md), already gathered
