@@ -1,6 +1,6 @@
 # 9900-process-design — research plan
 
-**Status**: draft
+**Status**: surveying
 
 ## Goal
 

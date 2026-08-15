@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** six research plans drafted and awaiting the user's go gate — 0100 (revised), 0110–0140, and the meta track 9900 (D-0025). Open rulings: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, 9900's dependency-envelope and ceremony-budget rulings, and the D-0019 ordering stamp with the contract owners.
+> **Frontier:** the meta track 9900 (D-0025) is surveying — its two gating rulings are resolved (D-0027, and net-steps-hold with all three cost units). Five plans still await the user's go gate: 0100 (revised), 0110–0140. Open rulings: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), and the D-0019 ordering stamp with the contract owners.
 
 ## How it works
 
@@ -48,4 +48,4 @@ in `findings.md` — the durable artifact.
 | 0120-e2e-testing | End-to-end browser testing of the live MQTT-over-WSS and reason-code REST flows (D-0022) | planned |
 | 0130-accessibility-linting | Static + automated accessibility checking for the React UI (D-0022) | planned |
 | 0140-supply-chain | Dependency vulnerability and supply-chain auditing (D-0022) | planned |
-| 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | planned |
+| 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | surveying |
