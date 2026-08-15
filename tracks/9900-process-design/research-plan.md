@@ -42,11 +42,12 @@ structure, or the shared rubric; those are a separate and larger track.
    merely a confident rationale. So what does each proposed control cost per track, and what
    must be retired, merged, or time-boxed to pay for it? This question has veto power over
    the others: a control that cannot be priced does not ship, and a control with no offset
-   named does not ship either. One sub-question the ruling left open and the survey should
-   resurface with concrete examples rather than guess: **which cost actually matters** —
-   wall-clock, human review time, or agent token spend. They trade against each other, and a
-   check that runs in milliseconds while producing findings a human must adjudicate is cheap
-   in one and expensive in another.
+   named does not ship either. The cost sub-question is now answered (intake item b,
+   2026-08-14): **all three costs matter — wall-clock, human review time, and agent token
+   spend — and none outranks the others in general.** So a control must be priced in all
+   three, and the report may not quietly optimise one at another's expense; where a control is
+   cheap in one and expensive in another (a check running in milliseconds that produces
+   findings a human must adjudicate), the trade must be stated rather than netted out.
 3. **Detector trust and false positives** — for each proposed check, what is its
    false-positive profile, and what happens when it cries wolf? A noisy validator gets
    disabled or routinely overridden, which is worse than no validator — and in a repo where
@@ -162,9 +163,15 @@ resolved 2026-08-14):
 
 - **Resolved** — the dependency envelope is a four-rung ladder, strict by default (D-0027)
 - **Resolved** — the budget is **net steps hold**, exceptions need a reviewed justification
-- **Still open, non-blocking** — which cost unit the budget is really denominated in
-  (wall-clock, human review time, or agent tokens); the survey resurfaces this with examples
-- **Still open** — whether CI exists for this repo today, or whether `check-docs.ts` runs
-  only pre-commit. This now matters more than it did: D-0027's rungs 2 and 3 differ precisely
-  on where a tool runs, so a repo with no CI collapses the ladder to rungs 0, 1, and 3
+- **Resolved** — all three cost units matter (wall-clock, human review time, agent tokens),
+  with none prioritised over the others in general; controls are priced in all three
+- **Resolved, and it matters**: **this repo has no CI.** There is no `.github/workflows/`
+  directory; `check-docs.ts` runs pre-commit only. (The app under study uses GitHub Actions,
+  but that is a different repository.) So **D-0027's rung 2 — "a binary in CI but not
+  pre-commit" — currently has nowhere to run**, and the ladder collapses to rungs 0, 1, and 3
+  for this repo. That sharpens the Vale question considerably: without CI, the realistic
+  options are replicate-in-house or every-contributor-installs-it, with the middle path gone.
+  It also raises a question this track should answer rather than assume: **should this repo
+  have CI at all?** That is a scripts-and-process question, squarely in scope, and it changes
+  what the dependency ladder can offer
 - The seed corpus in [seed-defect-corpus.md](seed-defect-corpus.md), already gathered

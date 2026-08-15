@@ -41,6 +41,18 @@ like? Carried unanswered from the Wave 1 intake (0010's cluster c), this is now 
 for 0060's per-message overhead budget (A-4), the policy table's sampled-validation tier (Key
 question 8), and 0070's guard/dispatch cost model (A-7) — all currently assumed ≤ ~1k msg/s.
 
+2026-08-14 update — **resolved on the rate, partially on the scheme**: peak inbound is
+**~50 messages/second**, and the topic scheme "varies a bit by use case"
+(facts/app-profile.md). The rate is roughly **20× lower than the ≤1k msg/s the reports
+assumed**, and the 0060 spike measured the boundary at 43.7k–61.2k msg/s under contention —
+so the real load is around three orders of magnitude below measured capacity. Consequence to
+carry into 0010 and 0060: **per-message validation cost is no longer a live design concern**,
+the compiled-versus-interpreted validator choice loses its throughput argument and must be
+decided on other grounds, and the **sampled-validation tier looks like unnecessary complexity
+rather than a needed escape hatch**. The topic-scheme answer is too coarse to retire the
+wildcard-matching design; mqtt-pattern keyed by AsyncAPI channel still stands, and "varies by
+use case" mildly strengthens the case for it.
+
 ## d — team stance on RxJS and Effect
 
 Does the team hold any preference, prior investment, or veto against RxJS or Effect? Both
@@ -93,6 +105,13 @@ Does the app run `clean: true` sessions, QoS 0/1, `resubscribe: true`, and
 `queueQoSZero: true` (mqtt.js's documented defaults)? 0060's A-5 and 0070's A-6 assume
 these hold; a `clean: false` or QoS 2 deployment changes the dedup-guard and gap-fill design
 in both reports.
+
+2026-08-14 update — **partially resolved**: **QoS 0 and 1 only, no QoS 2**
+(facts/app-profile.md). That is the half that mattered most — QoS 2 would have changed the
+dedup-guard and gap-fill design in both reports, and it is off the table. Still unanswered
+and still open: the session settings themselves (`clean`, `resubscribe`, `queueQoSZero`). A
+`clean: false` deployment would still change the reconnect and offline-queue design, so this
+item stays open on that half.
 
 ## k — backend idempotency-key support
 

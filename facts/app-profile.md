@@ -4,7 +4,9 @@ Facts about the application under study, supplied by the user (the app repo is n
 accessible from here — D-0004). Reports cite this file; a missing fact becomes a declared
 assumption in the report. Partial answers are fine.
 
-**Status**: partially filled (2026-08-14: React, TypeScript, strictness, repo layout)
+**Status**: partially filled (2026-08-14: React, TypeScript, strictness, repo layout, import
+style, build tool, MQTT QoS + rate, CI, browser targets, scale, team size). Still unfilled:
+Node version, package manager, the whole Contracts section, test framework, and vetoes.
 
 ## Stack
 - React version: 18.3.1 (2026-08-14, user — React 19 not in play)
@@ -12,7 +14,7 @@ assumption in the report. Partial answers are fine.
 - TypeScript strictness: very loose (2026-08-14, user — see track 0100 for the
   enforcement design; the codebase receives a high volume of agent-authored code)
 - Node version:
-- Build tool (Vite / webpack / other):
+- Build tool (Vite / webpack / other): vite
 - Package manager:
 - Monorepo or single package: **pseudo-monorepo** (2026-08-14, user) — the codebase is
   split across separate package directories, but those directories carry **no individual
@@ -43,16 +45,16 @@ assumption in the report. Partial answers are fine.
 - Current TS type-generation tool:
 
 ## MQTT
-- QoS levels used:
-- Topic-scheme shape (redacted example ok):
-- Rough peak message rate (msgs/sec):
+- QoS levels used: 1 and 0
+- Topic-scheme shape (redacted example ok): varies a bit by use case
+- Rough peak message rate (msgs/sec): ~50 per second
 
 ## Environment
-- CI provider:
-- Browser targets:
+- CI provider: GitHub Actions
+- Browser targets: Firefox version ~124 , Chromium latest - (latest - 2)
 - Test framework:
-- Approximate app scale (LOC or file count):
-- Team size:
+- Approximate app scale (LOC or file count): 150,000 lOC
+- Team size: ~50
 
 ## Vetoes
 - Existing team decisions that would disqualify candidates:
