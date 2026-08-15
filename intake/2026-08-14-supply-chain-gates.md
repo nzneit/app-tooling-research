@@ -23,8 +23,15 @@ about.
 
 → Resolution: the answer → updates facts/app-profile.md (Stack) and either confirms or
 collapses 0140's candidate list
-Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+
+2026-08-14 update — **resolved, on the favourable branch**: the tracked lockfile is the
+**text `bun.lock`**, bun alone installs and manages dependencies, and there is **no
+`package-lock.json` in the repo** (facts/app-profile.md). So the candidate list survives
+intact — OSV-Scanner, Trivy, Grype+Syft, Renovate, guarddog, and Dependabot-for-freshness all
+remain live — and no lockfile-format migration is needed before the track can proceed. It
+also **retires the npm/bun drift hazard** that Key question 6 was written for: with no second
+lockfile there is nothing to go stale, and no npm-shaped scanner can report green against a
+tree bun never installed. That question is re-aimed at prevention rather than remediation.
 
 ## b — does the enterprise already license Code Security / Advanced Security for this repo?
 

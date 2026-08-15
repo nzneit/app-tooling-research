@@ -51,15 +51,18 @@ provides.
    dependencies as routine authorship, is scanning the committed lockfile in CI
    sufficient, or does the risk of a newly published malicious or typosquatted package
    justify an install-time guard or a local heuristic scanner as a second layer?
-6. **Two package managers, one project — the drift hazard** — npm and bun are both in use.
-   Nothing in the candidate list cross-validates one lockfile against the other, which
-   creates a failure mode worse than a gap: if a `package-lock.json` also exists, an
-   npm-shaped scanner runs **green against a tree bun never installed**, producing false
-   confidence rather than a visible error. And the tool most likely to be reached for
-   reflexively is exactly the eliminated npm-audit family. Is the right answer architectural
-   — one authoritative lockfile, plus a CI invariant that fails if the other reappears —
-   rather than tool selection? This is the same silent-false-negative shape as D-0020, and
-   deserves the same treatment: a ratified rule paired with a test that asserts it.
+6. **Keeping the single-lockfile property, now that it holds** — the drift hazard this
+   question was written for is **retired**: bun alone manages dependencies, the text
+   `bun.lock` is the only tracked lockfile, and no `package-lock.json` exists
+   (facts/app-profile.md). So there is no second lockfile to go stale and no npm-shaped
+   scanner can report green against a tree bun never installed. What remains is preserving
+   that property: a stray `npm install` by a person or an agent would generate a
+   `package-lock.json` and silently recreate exactly the failure mode — a lockfile that looks
+   authoritative, is scannable by the tools people reach for reflexively, and describes a
+   tree nothing actually installed. Is a CI invariant asserting no `package-lock.json` (and
+   no `yarn.lock`/`pnpm-lock.yaml`) worth its one line? It is prevention rather than
+   remediation now, which makes it cheap — the same ratified-rule-plus-drift-test shape as
+   D-0020, applied before the defect exists rather than after.
 7. **Reaching the advisory database from on-prem runners** — the runners are self-hosted and
    on-prem. OSV-Scanner and its peers default to querying public advisory APIs. Does the
    runner network segment permit outbound HTTPS to osv.dev and equivalents, or does this need
@@ -95,15 +98,21 @@ provides.
 
 ## Candidates
 
-**2026-08-14 — the bun lockfile fact eliminated five candidates before the survey started.**
-The app uses npm *and* bun with a **bun lockfile committed** (facts/app-profile.md). Bun has
-two formats and every tool draws its line at exactly that boundary: the binary `bun.lockb`
-(default before Bun 1.2) is unreadable to essentially everything, while the text/JSONC
-`bun.lock` (opt-in from 1.1.39, default from 1.2, current Bun 1.3.x) is widely supported.
-**Which file this repo commits is therefore the single gating fact for this track** — asked
-as intake [2026-08-14-supply-chain-gates](../../intake/2026-08-14-supply-chain-gates.md)
-item a. Everything below assumes the text format; on binary, the surviving list shrinks to
-Renovate, knip, and guarddog.
+**2026-08-14 — the bun lockfile eliminated five candidates before the survey started, and
+the format question then resolved favourably.** Bun alone manages dependencies here, and the
+tracked lockfile is the **text `bun.lock`** with no `package-lock.json` present
+(facts/app-profile.md). Bun has two formats and every tool draws its support line at exactly
+that boundary — the binary `bun.lockb` is unreadable to essentially everything, the text
+format is widely supported — so this repo sits on the workable side and **no lockfile
+migration is needed before the track can proceed**. The five eliminations below still stand:
+they fail on requiring an npm- or yarn-shaped lockfile, which no bun format satisfies.
+
+**A standing hazard for every surviving candidate.** A scanner that cannot parse the lockfile
+tends to report **zero findings rather than an error**, which is indistinguishable from a
+clean repository. This is documented, not hypothetical — Grype v0.110.0 did exactly that on a
+bun.lock. So minimum-version pinning, and a positive assertion that the scanner actually read
+the file (a parsed-package count, not merely a zero exit code), are part of any
+recommendation this track makes rather than an operational afterthought.
 
 **Live candidates:**
 

@@ -21,11 +21,15 @@ Node version, package manager, the whole Contracts section, test framework, and 
   legacy `react({ babel: … })` option. Note 8.0.16 is below 8.2, where native
   `resolve.tsconfigPaths` left experimental — so alias resolution likely still runs through
   `vite-tsconfig-paths` today.
-- Package manager: **npm and bun both in use, with a bun lockfile committed** (2026-08-14,
-  user). Carry this into every recommendation: most JS supply-chain tooling assumes
-  package-lock.json / yarn.lock / pnpm-lock.yaml, so bun-lockfile support must be verified
-  per tool rather than assumed, and two package managers over one project is itself a
-  lockfile-drift risk.
+- Package manager: **bun, exclusively** (2026-08-14, user, clarified). Bun alone installs and
+  manages dependencies; the tracked lockfile is the **text `bun.lock`** format, and **there
+  is no `package-lock.json` in the repo**. Two consequences. First, tooling that requires an
+  npm/yarn-shaped lockfile is eliminated on constraint, not merit — this removed five
+  candidates from track 0140, including the whole `npm audit` family. Second, the text format
+  is the supported one: nearly every scanner draws its line at text-versus-binary, so the
+  broad candidate list survives where it would have collapsed on `bun.lockb`. Because there
+  is no second lockfile, the npm/bun drift hazard does **not** apply; a CI invariant asserting
+  no `package-lock.json` reappears is worth keeping as cheap prevention rather than a fix.
 - Monorepo or single package: **pseudo-monorepo** (2026-08-14, user) — the codebase is
   split across separate package directories, but those directories carry **no individual
   package.json and no individual versioning**. There is one root package.json and
