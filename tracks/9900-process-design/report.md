@@ -11,9 +11,8 @@ also skip Process FMEA, the pre-mortem, and the checklist gate as ratified contr
 The most important risk is that we cut the control with the best evidence. A named gate review
 falsified claims in three of five reports. Its cost lands on human review time, and this repo
 has never measured that time. The package therefore satisfies the net-steps rule, but it does
-not buy that control. The next step is a user ruling on three questions. The report names them:
-the meaning of a step, the status of a cancelled proposal, and the membership rule for the
-constraints header.
+not buy that control. The next step is a user ruling on seven items. The intake file
+`intake/2026-08-15-9900-report-rulings.md` names them.
 
 **As of**: 2026-08-15 (versions evaluated are listed per candidate)
 **Recommendation**: build — two rung-0 `check-docs.ts` changes (extend `linkedDocs` to
@@ -69,7 +68,10 @@ critic, a gap-scan agent, spike design review, cross-track coherence passes, ad-
 review, and the user acceptance gate. **This is a strong baseline and the recommendation must
 beat it explicitly** (research plan, "Do nothing structural"). It caught corpus categories C,
 D, E, F and part of A. It missed H, I and K — all three found by the user, on 2026-08-14, by
-*using* the machinery rather than reviewing its output.
+*using* the machinery rather than reviewing its output. It also missed **L**, added to the
+corpus on 2026-08-15 by an agent inside this track that set a research plan's `Status` field to
+`surveying` and so diverged from thirteen siblings — found by using the machinery too, but by an
+agent rather than the user, which is the one encouraging data point in this paragraph.
 
 The narrow opening that leaves: **no recurring, named pass is pointed at the machinery.** One
 ad-hoc machinery audit did run, at the Wave 1 close-out, and it produced two `check-docs.ts`
@@ -158,7 +160,7 @@ refuse when invoked — **nothing guarantees invocation**.
 
 The analogy breaks where it matters. Sorting the corpus honestly: mechanically preventable = B
 (cross-references), F (ephemeral paths), and the `Status`-expressiveness half of J. Not
-preventable by any device = A, C, D, E, G, H, I, K. **Three of eleven categories addressable,
+preventable by any device = A, C, D, E, G, H, I, K, L. **Three of twelve categories addressable,
 eight not.** Poka-yoke is a useful filter for telling prevention from detection; it is not an
 organising frame for this track.
 
@@ -349,8 +351,19 @@ cut it on that basis. Measured 2026-08-15: 27 `**From**` fields, 17 path-shaped 
 which is a path inside *another repository*, cited parenthetically. So the check ships with one
 measured **false positive** and zero true positives, which is a stronger cut than the lane made.
 The principled distinction against the two changes that do ship: those are scope widenings of an
-existing matcher with a measured zero-error result and no new false-positive surface; this is a
-**new** matcher with a new mention-versus-instance surface. If the owner wants one more validator
+existing matcher with a measured zero-error result, whereas this is a **new** matcher with a new
+mention-versus-instance surface.
+
+> **2026-08-15 correction, from the adversarial review of this draft.** An earlier version of
+> this sentence also claimed the two shipped changes carry **"no new false-positive surface"**.
+> That is false. Re-measured: adding `docs/` brings in **14 relative link-shaped strings that sit
+> inside fenced blocks** against **1** outside, some of them `check-docs.ts`'s own deliberately
+> unresolvable negative-test fixtures. The surface exists; the fence mask is what keeps it at
+> zero errors. So the honest statement is that **the fence mask becomes load-bearing for almost
+> all of the newly added link surface** — which also means shipped items 1 and 2 are coupled, and
+> item 2's composition-order shipping condition (strip inline spans *after* fence stripping)
+> exists precisely because item 1 ships. The distinction against this cut check survives, because
+> the issue there is a matcher with no mask at all rather than a mask carrying more weight. If the owner wants one more validator
 change, this is first on the list — but it needs its not-content mask defined first.
 
 #### External link checking — skip at every rung
@@ -375,12 +388,39 @@ forever; and **four citations whose 404 *is* the evidence**.
 
 Two things settle it. **The venue is unpriced**: every wall-clock figure supporting this control
 ("~140 s in CI", "49.9 s", "57 s against 0.63 s") resolves to "acceptable in CI where it is
-free" — and there is no `.github/` directory, with "should this repo have CI?" an open question
-in this track's own plan. Pricing execution in infrastructure that does not exist is not a
-price. **And a green run is uninformative about the thing anyone cares about**: measured
-2026-08-15 across the eight accepted reports, of 1,903 URL occurrences (1,219 unique), **252
-point at a mutable GitHub branch ref and 94 at a `registry.npmjs.org` `/latest` endpoint,
-against 8 pinned to a SHA or tag**. A 200 proves the path still exists and says nothing about
+free" — and there is no `.github/` directory. Pricing execution in infrastructure that does not
+exist is not a price.
+
+> **2026-08-15 correction, from the adversarial review of this draft.** An earlier version called
+> "should this repo have CI?" *an open question in this track's own plan*, and then spent that
+> openness as one of two reasons settling the skip for the whole external-tool class. That
+> inverts the plan, which **assigns** the question to this track in so many words — "the track
+> should therefore answer, rather than assume: should this repo have CI?" — and calls it squarely
+> in scope, having already resolved the enabling facts (the repo is public, so Actions is free;
+> the blocker is setup effort, not cost). Converting an assigned in-scope question into an
+> unknown and then spending the unknown is not a price either. **The skip survives on its own
+> merits**, which are on the page and do not depend on CI's absence: the false-positive classes,
+> the non-informativeness of a green run, and the four numbers the spike list still asks for. But
+> the question does not lapse — it goes to the owner as **intake item `g`**, because this track
+> was told to answer it and did not. **And a green run is uninformative about the thing anyone cares about**: measured
+2026-08-15 across the eight accepted reports, of 1,903 URL occurrences (1,219 unique), **the
+overwhelming majority point at a mutable ref and 18 occurrences (11 unique) are pinned**.
+
+> **2026-08-15 correction, from the adversarial review of this draft.** An earlier version of
+> this paragraph gave three sub-counts — 252 mutable GitHub refs, 94 `/latest` endpoints, 8
+> pinned — **without printing the counting rule that produced them**, and two of the three do not
+> reproduce. Re-measured independently: the pinned figure counted only `refs/tags/` and 40-hex
+> SHAs, missing every `releases/tag/` citation; the reproducible counts are **18 tag-pinned
+> occurrences (11 unique) and zero SHA-pinned**, against **882 GitHub-family citations**
+> (`github.com` 674 + `raw.githubusercontent.com` 208) and 279 `registry.npmjs.org` citations.
+> The direction is unchanged and the case is slightly stronger — roughly **2% of GitHub-family
+> citations are pinned** — but the earlier numbers should not be quoted. The rule for every count
+> above: all `http(s)` URLs in `tracks/*/report.md` excluding this track, trailing punctuation
+> stripped; pinned means `refs/tags/`, `releases/tag/`, `/tree|blob/vN.N`, or a 40-hex SHA. This
+> is a live instance of the report's own finding that an unstated counting rule is not a
+> measurement, and it is why the shipped package includes the run-the-regex-and-count-first rule.
+
+A 200 proves the path still exists and says nothing about
 whether the content still supports the claim. The repo's existing counterweight is manual and
 already in place: **1,172** `accessed YYYY-MM-DD` stamps.
 
@@ -433,7 +473,7 @@ its passive-voice rule would come through `textlint-rule-write-good` 2.0.0, last
 
 markdownlint is healthy (markdownlint-cli2 0.23.2, MIT, ~1.38M weekly downloads) and checks a
 category this repo has **never had a defect in**: 53 active rules, the large majority
-heading/list/whitespace/emphasis formatting. Corpus categories A-K contain no formatting defect
+heading/list/whitespace/emphasis formatting. Corpus categories A-L contain no formatting defect
 at all. One correction to the survey: MD051 does *not* duplicate `checkLinks`, because
 `checkLinks` skips every `#`-prefixed target *(verified at `scripts/check-docs.ts:116`)* —
 same-document fragments are the one link class the validator ignores. The right reason to skip
@@ -528,9 +568,10 @@ already runs is shipped.**
 **KQ6 — citation integrity.** Solve neither half now. The cheap half is skipped above. The hard
 half — does the page support the claim — has a partial, rung-0, no-network answer in an
 immutable-ref rule, which is flagged for the owner rather than shipped, because it names no
-offset. On the false-confidence question the answer is **yes, and measurably**: 252 mutable
-GitHub refs plus 94 `/latest` endpoints against 8 pinned means a green link check would be a
-strong signal that is *non-informative* about content stability. State the relationship as
+offset. On the false-confidence question the answer is **yes, and measurably**: roughly 2% of
+the 882 GitHub-family citations are pinned (18 occurrences, 11 unique — see the corrected count
+above), so a green link check would be a strong signal that is *non-informative* about content
+stability. State the relationship as
 non-informativeness, not anti-correlation.
 
 **KQ7 — the silent-config footgun class.** Convert the *rule* half, not the registry half. The
@@ -615,17 +656,29 @@ Skip survives all three routes because the yield (0.6-1%, provenance rot changin
 recommendation) does not justify a new subsystem, a new binary, or a venue that must first be
 built.
 
-**2. Does corpus category B's defect class exist at all?** Adversarial verification proved by
-`git log -p --follow` that **neither 0060's nor 0070's A-list has ever been renumbered**, and
-that the one cited instance (`ef51766`) was a **mis-citation, not drift** — every cited ID
-resolved before and after. **The corpus's own account at `seed-defect-corpus.md:47-48` is
-wrong.** Three lanes' cross-reference proposals — a linkable cross-reference convention, an
-anchored one, and retroactivity pricing for `A-n` — rest on that class and lose their evidence
-base simultaneously, together with ~56 citations plus 28 anchors of unpriced retroactive load.
+**2. Does corpus category B's defect class exist in the A-lists?** Adversarial verification
+proved by `git log -p --follow` that **neither 0060's nor 0070's A-list has ever been
+renumbered**, and that the one cited instance (`ef51766`) was a **mis-citation, not drift** —
+every cited ID resolved before and after. Three lanes' cross-reference proposals — a linkable
+cross-reference convention, an anchored one, and retroactivity pricing for `A-n` — rest on the
+A-list half and lose that part of their evidence base, together with ~56 citations plus 28
+anchors of unpriced retroactive load.
+
+> **2026-08-15 correction, from the adversarial review of this draft.** An earlier version asked
+> whether the class exists *at all*, answered no, and instructed that the corpus be corrected.
+> **That over-generalised from the half that was tested.** Category B's primary claim is about
+> the spike design panels' **I-lists and invariant lists**, not the A-lists, and it is
+> **verifiably true**: commit `a26ea5a` inserted a new `I2` into 0060's boundary-wiring design
+> and cascaded `I2`→`I3` … `I12`→`I13` in one edit, with the sibling `findings.md` citing into
+> that list in prose. The corpus record stands and must not be "corrected". What survives from
+> the verification is narrower and still decisive for the disposition: the A-list instance was a
+> mis-citation, and — the blow that applies to **both** halves — a back-anchor comment does not
+> move under renumbering, so a stale citation would keep resolving while pointing at the wrong
+> item. A checker that stays green while the reference is wrong is worse than none.
 Two further blows: the proposed reuse of `checkIds` is impossible, because its fixed-width regex
 rejects A-10 through A-14, which both reports declare; and back-anchor comments do not move
 under renumbering, so a stale citation would keep resolving while pointing at the wrong item.
-**Resolution: cut all three, and correct the corpus.** The `A-n` convention question is real and
+**Resolution: cut all three; leave the corpus record alone.** The `A-n` convention question is real and
 goes to the owner as a convention ruling, not as a checker.
 
 **3. Is the un-enforced validator a problem worth fixing?** One lane called CI "the strongest
@@ -727,7 +780,7 @@ rather than scored.
 | Method | License (medium) | Integration cost (high) | Maint. health / TS fit / Runtime / Output quality / Escape hatch |
 |---|---|---|---|
 | Process FMEA (AIAG-VDA, 2022 printing) | **weak** — normative tables paywalled ($81-$3,536); free seven-step skeleton only | **weak** — one adjudication round per invocation, landing on the unit with zero baseline observations | **n-a** (technique) |
-| Poka-yoke / mistake-proofing | **strong** — public method, no artifact to license | **n-a as a control** — a filter for sorting proposals, not a step; addresses 3 of 11 corpus categories | **n-a** (technique) |
+| Poka-yoke / mistake-proofing | **strong** — public method, no artifact to license | **n-a as a control** — a filter for sorting proposals, not a step; addresses 3 of 12 corpus categories | **n-a** (technique) |
 | Checklist practice (Gawande) | **weak** — one-page artifact, license unstated; verbatim reproduction is an open permission question | **weak** — ~195 screening judgments across 39 entries; priced in zero of three units by its proposer | **n-a** (technique) |
 | Pre-mortem (Klein) | **strong** — published method | **weak** — cannot return "nothing"; a step generator under a net-steps ceiling; its lifecycle slot is already occupied | **n-a** (technique) |
 | Blameless postmortem / ODC | **strong** — public practice | **adequate** — the trigger list and attribution column are cheap; the ritual is not, and N=5 defeats rate measurement | **n-a** (technique) |
@@ -855,14 +908,23 @@ measured on humans reading code, not agents reading prose.
 
 **(b) The immutable-ref citation rule.** The only control in the survey whose value **outlives
 the program**. Measured 2026-08-15 across the eight accepted reports: 1,903 citation occurrences
-(1,219 unique), 252 pinned to a mutable GitHub branch, 94 to a `registry.npmjs.org` `/latest`
-endpoint, and **8** pinned to a SHA or tag. Those citations are the entire evidentiary basis of
+(1,219 unique), of which **882 are GitHub-family** citations and only **18 occurrences (11
+unique) are pinned to a tag — none to a SHA** (counting rule and correction stated in the Survey).
+That is roughly 2% pinned. Those citations are the entire evidentiary basis of
 eight accepted reports and keep decaying after 0140. It names no offset and its retroactivity is
 unpriced. If the owner wants it, the cheap shape is regex-only, no network, warn-level, scoped
 to `github.com` and `raw.githubusercontent.com` where every hit has a mechanical fix, run
-diff-scoped over newly added lines so it does not fire 252 times on day one.
+diff-scoped over newly added lines so it does not fire on the ~864 unpinned GitHub-family
+citations already in the corpus on day one.
 
 ### Three rulings only the owner can make
+
+All owner-facing items in this report — the three rulings below, the two flagged cuts above, and
+one definitional call — are carried as a dated intake file per the `CLAUDE.md` rule that questions
+only the user can answer do not live in a report:
+[intake/2026-08-15-9900-report-rulings.md](../../intake/2026-08-15-9900-report-rulings.md), six
+items plus `g`, added by this draft's adversarial review. That file is the place to answer; this section is the reasoning behind items
+`a` to `c`.
 
 **(i) The ceiling ruling never defines "step", and this report's arithmetic is contingent on the
 answer.** This report assumed a step is a **mandatory per-track authoring or review action**
