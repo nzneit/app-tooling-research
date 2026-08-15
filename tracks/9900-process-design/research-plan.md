@@ -80,7 +80,12 @@ structure, or the shared rubric; those are a separate and larger track.
 8. **Cross-document consistency** — sibling-report drift was caught only by a manual
    whole-branch pass at a wave gate, because per-track critics reason only within their own
    track. Is a cross-track consistency step worth naming, or is the wave gate already the
-   right and sufficient place for it?
+   right and sufficient place for it? A second half surfaced from the prior art: this repo has
+   **no stated precedence order**. `DECISIONS.md` is called the authority for what is decided,
+   but nothing ranks a report against a plan against `facts/app-profile.md` when they
+   disagree, so every conflict is adjudicated from scratch. Offbook states one explicitly and
+   writes it as an instruction (on conflict, fix the other doc), which converts an argument
+   into a lookup. Is that worth adopting, and what is the order?
 9. **STE enforcement** — the spec claims the summary rule is validator-enforceable, but only
    the heading's presence is checked. Sentence length and voice are mechanically checkable;
    "one word for one meaning" largely is not, and the ASD-STE100 dictionary is not clearly
@@ -102,7 +107,14 @@ structure, or the shared rubric; those are a separate and larger track.
     repo-level artifact with a pointer from `CLAUDE.md`, folded into an existing home, or
     deliberately frozen as historical input when this track completes? It is priced like any
     other control: a register nobody appends to is worse than no register, so an answer that
-    keeps it alive must name who appends to it and at which lifecycle moment.
+    keeps it alive must name who appends to it and at which lifecycle moment. The prior art
+    sharpens this rather than settling it: offbook keeps its lessons as a **Working notes**
+    section inside its auto-loaded entry point — read every session by construction, entries
+    written as rules with the incident attached, several naming the test that now pins the
+    lesson. But it is unbounded and unpruned, and it has grown long. So the real question is
+    not where lessons live but **what stops a lessons register from growing without bound in
+    a file every session pays for**, which is a context-budget cost and therefore falls under
+    Key question 2's pricing rule. Neither repo answers it today.
 
 ## Candidates
 
@@ -118,6 +130,7 @@ classes visibly separate rather than scoring them on one table.
 - Pre-mortem (Klein) — applied to a plan before its survey runs
 - Blameless postmortem and defect taxonomy (SRE practice) — the corpus is already a rough instance of this
 - **Do nothing structural** — keep the machinery as-is and rely on the passes that already exist. The corpus shows categories D and E were caught by existing passes; the recommendation must beat this baseline explicitly
+- **offbook's lifecycle model** — https://github.com/nzneit/offbook — the prior art this repo's doc system was already adapted from (D-0009), read a second time for the lifecycle rather than the document shapes. Gathered in [prior-art-offbook.md](prior-art-offbook.md), which states the transfer boundary (offbook is an app repo with code and tests; several of its mechanisms are anchored to that and do not transfer) and flags where it is *behind* this repo as well as ahead. It is the only candidate here that is a working system rather than a technique, and it independently reached this track's founding premise
 
 **Tools:**
 
@@ -190,3 +203,9 @@ resolved 2026-08-14):
   contributor wall-clock to pipeline time, which is a reallocation across the three cost units
   the budget ruling says all matter — not a free win
 - The seed corpus in [seed-defect-corpus.md](seed-defect-corpus.md), already gathered
+- The offbook prior art in [prior-art-offbook.md](prior-art-offbook.md), already gathered
+  (2026-08-15). Note one consequence for the survey's framing: this track's founding premise —
+  that the validator and the defects live in different places — is now **twice-observed
+  independently**, since an offbook review round reached the same conclusion in its own words
+  about its own corpus. The survey should treat that premise as established and spend its
+  effort on what follows from it, not on re-arguing it
