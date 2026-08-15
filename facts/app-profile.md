@@ -13,9 +13,19 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - TypeScript version: 5.9.3 (2026-08-14, user)
 - TypeScript strictness: very loose (2026-08-14, user — see track 0100 for the
   enforcement design; the codebase receives a high volume of agent-authored code)
-- Node version:
-- Build tool (Vite / webpack / other): vite
-- Package manager:
+- Node version: **>= 24** (2026-08-14, user) — clears every floor in play (Vite 8, knip
+  `^20.19.0 || >=22.12.0`, MSW `>=18`)
+- Build tool (Vite / webpack / other): **Vite 8.0.16**, with **@vitejs/plugin-react 6.0.2**
+  (2026-08-14, user). Decisive for React Compiler: plugin 6.x carries **no internal Babel**,
+  so the compiler wires through `@rolldown/plugin-babel` + `reactCompilerPreset`, never the
+  legacy `react({ babel: … })` option. Note 8.0.16 is below 8.2, where native
+  `resolve.tsconfigPaths` left experimental — so alias resolution likely still runs through
+  `vite-tsconfig-paths` today.
+- Package manager: **npm and bun both in use, with a bun lockfile committed** (2026-08-14,
+  user). Carry this into every recommendation: most JS supply-chain tooling assumes
+  package-lock.json / yarn.lock / pnpm-lock.yaml, so bun-lockfile support must be verified
+  per tool rather than assumed, and two package managers over one project is itself a
+  lockfile-drift risk.
 - Monorepo or single package: **pseudo-monorepo** (2026-08-14, user) — the codebase is
   split across separate package directories, but those directories carry **no individual
   package.json and no individual versioning**. There is one root package.json and
@@ -50,9 +60,15 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - Rough peak message rate (msgs/sec): ~50 per second
 
 ## Environment
-- CI provider: GitHub Actions
+- CI provider: **GitHub Actions on GitHub Enterprise**, application repo is **private**, with
+  **custom on-prem (self-hosted) runners of varying sizes** (2026-08-14, user). Two
+  consequences: runner hardware is the organisation's own choice, so memory-hungry
+  whole-repo tools are not capped by GitHub-hosted runner sizes; and code scanning on a
+  private repo depends on whether the enterprise already licenses Code Security /
+  Advanced Security — a question about existing entitlement, not a new purchase.
 - Browser targets: Firefox version ~124 , Chromium latest - (latest - 2)
-- Test framework:
+- Test framework: **vitest 4.1.9** (2026-08-14, user) — retires an assumption standing since
+  Wave 2
 - Approximate app scale (LOC or file count): 150,000 lOC
 - Team size: ~50
 

@@ -23,18 +23,19 @@ eslint-plugin-react-hooks 7.x; this track does not revisit that.
 
 ## Key questions
 
-1. **Install path** — the build tool is confirmed **Vite** (facts/app-profile.md), so the
-   question narrows to a binary fork on version. `@vitejs/plugin-react` **6.0.0+ requires
-   Vite 8+ and carries no internal Babel**, so the compiler wires through
-   `@rolldown/plugin-babel` with `reactCompilerPreset`; **5.x and earlier bundles Babel**
-   (peer range Vite 4.2–7.x) and uses the legacy `react({ babel: { plugins: [...] } })`
-   option. Vite 8 shipped 2026-03-12, Vite 7 mid-2025, Vite 6 late 2024, so any of three
-   majors is plausible. The two version facts are asked as intake
-   [2026-08-14-version-gates](../../intake/2026-08-14-version-gates.md) items a and b —
-   Node gates this too, since Vite 7 dropped Node 18. Remaining for the survey: does the
-   pseudo-monorepo's tsconfig-paths-only resolution break the compiler's module-boundary
-   assumptions anywhere, and does the alias plugin (`vite-tsconfig-paths`, required on any
-   Vite ≤7) interact with the Babel pass?
+1. **Install path — resolved, and it is the harder branch.** The versions are confirmed:
+   **Vite 8.0.16, `@vitejs/plugin-react` 6.0.2, Node ≥ 24** (facts/app-profile.md). Plugin 6.x
+   **carries no internal Babel**, so the legacy `react({ babel: { plugins: [...] } })` recipe
+   — which most published React Compiler guidance still shows — **does not apply here at
+   all**. The compiler must wire through **`@rolldown/plugin-babel` with the
+   `reactCompilerPreset` helper**, and React 18.3.1 additionally requires
+   `react-compiler-runtime` plus an explicit `target: '18'`. So the survey's first job is to
+   verify that this specific combination works end to end and does not break Fast Refresh —
+   not to choose between install paths. Two follow-ons: does re-introducing a Babel pass into
+   a deliberately Babel-free Vite 8 pipeline cost meaningful build time at 150k LOC, and does
+   it interact with alias resolution? Note 8.0.16 sits below 8.2, where Vite's native
+   `resolve.tsconfigPaths` left experimental, so `vite-tsconfig-paths` is likely still in the
+   chain — confirm which resolves `@appname/*` today.
 2. **React 18 config burden** — `react-compiler-runtime` plus an explicit `target: '18'`
    is mandatory for React 18.3.1. Who keeps the runtime version and target string in
    sync, and what breaks if they drift — a build error, or a silent no-op?

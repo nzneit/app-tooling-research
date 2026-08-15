@@ -1,7 +1,14 @@
 # 2026-08-14: version and visibility gates (intake)
 
-**Status**: open
+**Status**: resolved
 **Owner**: app owner
+
+All four items answered 2026-08-14. Two answers moved conclusions rather than confirming
+them: the Vite 8 / plugin-react 6 combination settles 0110's install path onto the
+Babel-free branch, and the self-hosted on-prem runners retire the sharpest form of the
+memory risk flagged against knip. Two follow-on questions the answers created — bun-lockfile
+support across the supply-chain toolchain, and whether the enterprise already licenses Code
+Security — are tracked in 0140's plan rather than reopened here.
 
 The facts supplied on 2026-08-14 unblocked a great deal, and in doing so sharpened what
 remains into a small set of specific version questions. Each of these now gates a concrete
@@ -30,7 +37,7 @@ safe once the major is known.
 → Resolution: the answer → updates facts/app-profile.md (Stack) and selects 0110's install
 path outright
 Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+2026-08-14 update — vite 8.0.16 , vitest 4.1.9 , and @vitejs/plugin-react 6.0.2 .
 
 ## b — Node version
 
@@ -43,7 +50,7 @@ compatibility (engines `^20.19.0 || >=22.12.0`) and MSW's floor (`>=18`).
 
 → Resolution: the answer → updates facts/app-profile.md (Stack) and constrains item a
 Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+2026-08-14 update — node >=24
 
 ## c — is the application's repository public or private?
 
@@ -69,7 +76,8 @@ private, and sit outside Advanced Security entirely.
 → Resolution: the answer → updates facts/app-profile.md (Environment) and settles 0140's
 reporting-path evaluation
 Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+2026-08-14 update — The app is an GitHub enterprise private repo with custom on 
+prem runners of different sizes.
 
 ## d — package manager, and test framework
 
@@ -83,4 +91,4 @@ assumption since Wave 2 (it is now a strong inference from Vite, but still an in
 → Resolution: the answer → updates facts/app-profile.md (Stack, Environment) and retires two
 long-standing assumptions
 Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+2026-08-14 update — npm and bun for packages manager , bun lock file , the test framework is vitest

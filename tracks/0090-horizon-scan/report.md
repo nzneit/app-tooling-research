@@ -123,15 +123,24 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 > flagged risk, not a predicted failure — and it is precisely the class D-0001 says desk
 > research cannot settle. It belongs in a spike.
 >
-> What makes it sharp rather than academic is that **the usual mitigation is unavailable**.
-> GitHub-hosted standard runners are 4-core/16 GB for public repos and **2-core/8 GB for
-> private ones** ([runner specs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)) —
-> against a documented failure that needed more than 24 GB. Larger runners bill per minute
-> with no free allowance, which D-0003 excludes. So if knip does struggle here, the fix must
-> be architectural — scoped `include` globs, project-reference sharding, or moving knip off
-> the every-commit path to a scheduled advisory run — not a bigger machine. The adoption
-> stands; the **first spike question is now "does it complete, and in what memory," before
-> "is the config clean."**
+> **Correction, same day — the mitigation IS available, and the risk drops accordingly.**
+> This paragraph originally argued the risk was sharp because a bigger machine was not an
+> option: GitHub-hosted standard runners are 4-core/16 GB public and 2-core/8 GB private
+> ([runner specs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)),
+> larger runners bill per minute, and D-0003 excludes paid tiers. That reasoning assumed
+> GitHub-hosted runners. The app in fact runs **custom on-prem self-hosted runners of varying
+> sizes** (facts/app-profile.md), so runner memory is an allocation decision the organisation
+> already controls, not a purchase — and self-hosted runners are not billed per Actions
+> minute at all. Allocating a large-memory runner for this job is therefore an available and
+> cheap fix.
+>
+> The risk is consequently **manageable rather than sharp**, but it is not zero: memory is
+> only one axis, and knip#1435 also reports a 1–1.5 hour runtime, which no amount of RAM
+> fixes and which matters on an every-commit gate with no affected-file selection. The
+> adoption stands, and the **first spike question is "does it complete, in what memory, and
+> in what wall-clock"** — with the architectural fallbacks (scoped `include` globs,
+> project-reference sharding, or moving knip to a scheduled advisory run) held in reserve for
+> the runtime half rather than the memory half.
 
 **Bus factor is the one clear weakness.** Knip is maintained by a single person, Lars Kappert ([@webpro](https://github.com/webpro)), and [GitHub Sponsors data](https://github.com/sponsors/webpro) shows a monthly aggregated average around $520 — thin funding for a tool this widely depended on. Release cadence and issue responsiveness are currently strong (14 open issues at last check, near-weekly releases), so there's no near-term maintenance red flag, but a CI gate this load-bearing carries real single-maintainer risk that the two archived predecessors (each also effectively single-maintainer) illustrate isn't hypothetical.
 
