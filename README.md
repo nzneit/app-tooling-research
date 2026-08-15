@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** 0090 report drafted — awaiting user review (7 direct adoptions, 2 proposed future tracks, 1 skip); 0100-type-strictness plan drafted (D-0021) — awaiting go; the D-0019 ordering-stamp requirement still awaits the contract owners.
+> **Frontier:** 0090 accepted (D-0022) — five adoptions, four new tracks minted (0110–0140, all `planned`); next: the 0100 plan revision goes to the user for its go gate, then its survey starts. Open: the build-tool fact (intake 0090 item a), the 0100 intake, and the D-0019 ordering stamp with the contract owners.
 
 ## How it works
 
@@ -39,5 +39,9 @@ in `findings.md` — the durable artifact.
 | 0050-logging | Config- and runtime-controllable logging facade (sinks, levels, throttling) | accepted |
 | 0060-transport-abstraction | Unified typed MQTT+REST boundary; validation choke point (Wave 2 — starts from 0010's accepted report) | accepted |
 | 0070-state-concurrency | Composable Zustand+xstate patterns; race-condition prevention (Wave 2 — starts from 0010's accepted report) | accepted |
-| 0090-horizon-scan | "Anything else" discovery session | report drafted |
+| 0090-horizon-scan | "Anything else" discovery session | accepted |
 | 0100-type-strictness | Raise + enforce TypeScript strictness against high-volume agentic code churn (D-0021) | planned |
+| 0110-react-compiler | Whether and how to adopt the React Compiler on React 18.3.1 (D-0022) | planned |
+| 0120-e2e-testing | End-to-end browser testing of the live MQTT-over-WSS and reason-code REST flows (D-0022) | planned |
+| 0130-accessibility-linting | Static + automated accessibility checking for the React UI (D-0022) | planned |
+| 0140-supply-chain | Dependency vulnerability and supply-chain auditing (D-0022) | planned |

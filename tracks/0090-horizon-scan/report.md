@@ -2,12 +2,24 @@
 
 ## Summary (STE)
 
-This track examined the tooling areas that tracks 0010–0070 did not cover. We recommend seven direct adoptions. The tools are knip, dependency-cruiser, MSW for REST test mocks, type-coverage, size-limit, eslint-plugin-jsx-a11y, and OSV-Scanner. We recommend two future tracks: React Compiler adoption and Playwright end-to-end tests. MSW does not fit the MQTT test lane; the aedes broker harness from the 0060 spike keeps that role.
+This track examined the tooling areas that tracks 0010–0070 did not cover. The user accepted this report on 2026-08-14. We adopt five tools directly. The tools are knip, dependency-cruiser, MSW for REST test mocks, type-coverage, and size-limit. We start four new tracks: 0110, 0120, 0130, and 0140. MSW does not fit the MQTT test lane; the aedes broker harness from the 0060 spike keeps that role.
 
-The most important risk is the unknown build tool. This fact gates the size-limit choice and the React Compiler install path. Track 0100 now owns the type-coverage ratchet design. Most winning tools have one maintainer each. The next step is to answer the intake questions and accept or amend each disposition.
+The most important risk is the unknown build tool. This fact gates the size-limit choice and the plan for track 0110. Track 0100 now owns the design of the type-coverage ratchet. Most adopted tools have one maintainer each. The next step is to answer the open intake questions.
 
 **As of**: 2026-08-14 (versions evaluated are listed per area)
-**Recommendation**: adopt (seven direct adoptions) — knip 6.32.2, dependency-cruiser 18.2.0, MSW 2.15.0 (REST leg, via orval `mock: true`), type-coverage 2.30.1, size-limit 13.0.3, eslint-plugin-jsx-a11y 6.10.2, OSV-Scanner 2.5.0; two proposed future tracks — React Compiler adoption, Playwright end-to-end testing; one skip — MSW on the MQTT-over-WSS leg (the aedes-over-ws harness stands)
+**Recommendation** (as accepted, D-0022): adopt — knip 6.32.2, dependency-cruiser 18.2.0, MSW 2.15.0 (REST leg, via orval `mock: true`), type-coverage 2.30.1 (input to 0100), size-limit 13.0.3; four new tracks — 0110-react-compiler, 0120-e2e-testing, 0130-accessibility-linting, 0140-supply-chain; one skip — MSW on the MQTT-over-WSS leg (the aedes-over-ws harness stands)
+
+> **Accepted 2026-08-14 — D-0022, with one amendment.** The five core direct adoptions
+> and the one skip stand as written. The amendment concerns the three anything-else
+> sweep items: they do **not** land as scan-depth adoptions. Each becomes its own
+> planned research track that evaluates candidates, because the sweep compared one
+> candidate per area — a proposal, not a survey. Accessibility linting becomes
+> **0130-accessibility-linting**, supply-chain auditing becomes **0140-supply-chain**,
+> and browser testing becomes **0120-e2e-testing**. The React Compiler future-track
+> disposition is minted as **0110-react-compiler**. In each case this report's findings
+> become the track's *starting* candidate, not its conclusion. The dispositions table
+> below is annotated accordingly; the survey sections are left as written, since they
+> remain the evidence those tracks start from.
 
 ## Dispositions
 
@@ -24,11 +36,11 @@ scan depth; areas dispositioned "future track" get full scoring in that track.
 | Test-lane REST mocking | MSW 2.15.0 via orval `mock: true` | direct adopt |
 | Test-lane MQTT mocking | — | skip — the aedes-over-ws harness (0060 spike) stands |
 | Type coverage / any-leakage ratchet | type-coverage 2.30.1 | direct adopt as an **input to track 0100** (D-0021), which owns the ratchet design |
-| React Compiler adoption | babel-plugin-react-compiler 1.0.0 | **future track** (proposed 0100) |
+| React Compiler adoption | babel-plugin-react-compiler 1.0.0 | **future track** → minted **0110-react-compiler** (D-0022) |
 | Bundle-budget enforcement in CI | size-limit 13.0.3 | direct adopt, with a build-tool-fact caveat (intake) |
-| Accessibility linting (sweep) | eslint-plugin-jsx-a11y 6.10.2 | direct adopt into the ESLint-in-CI lane |
-| End-to-end browser testing (sweep) | Playwright 1.62.1 | **future track** (proposed 0110) |
-| Supply-chain vulnerability auditing (sweep) | OSV-Scanner 2.5.0 | direct adopt |
+| Accessibility linting (sweep) | eslint-plugin-jsx-a11y 6.10.2 | ~~direct adopt~~ → **track 0130-accessibility-linting** (D-0022 amendment) |
+| End-to-end browser testing (sweep) | Playwright 1.62.1 | **future track** → minted **0120-e2e-testing** (D-0022) |
+| Supply-chain vulnerability auditing (sweep) | OSV-Scanner 2.5.0 | ~~direct adopt~~ → **track 0140-supply-chain** (D-0022 amendment) |
 
 ## Survey
 
@@ -454,9 +466,13 @@ global-`WebSocket` patch) and wrong abstraction level (MSW disclaims custom WebS
 protocols); the aedes-over-ws harness the 0060 spike proved keeps that role. Minting the
 proposed track numbers is the acceptance gate's call, not this report's.
 
-> **2026-08-14 update (post-draft, pre-acceptance)**: track number 0100 has since been
-> minted for the user-directed type-strictness track (D-0021), so if accepted, the
-> proposed React Compiler and end-to-end tracks would mint as **0110** and **0120**.
+> **2026-08-14 — resolved at acceptance (D-0022).** Four tracks were minted:
+> **0110-react-compiler**, **0120-e2e-testing**, **0130-accessibility-linting**, and
+> **0140-supply-chain**. The last two come from the user's amendment, which converted
+> the sweep's two direct-adopt calls into candidate-evaluating tracks. This report's
+> recommendation therefore reads, as accepted: **five direct adoptions** (knip,
+> dependency-cruiser, MSW on the REST leg, type-coverage as an input to 0100,
+> size-limit), **four new tracks**, and **one skip**.
 
 **Lane policy, stated once** (the critic flagged an apparent tension): the program
 prefers oxlint-native rules or standalone CLIs first, and extends the existing
