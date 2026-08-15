@@ -54,7 +54,9 @@ break Dependabot alerts independently of everything else.
 → Resolution: the answer → updates facts/app-profile.md (Environment) and settles 0140's
 reporting path
 Answer here: when this item is resolved, append a new paragraph below it, starting
-`YYYY-MM-DD update — `.
+2026-08-14 update — SNYK is already licensed and used, but we really don't know how to configure
+or use it properly for the repository and into SNYK's systems (I am not really married to it). 
+GitHub Enterprise Cloud is what is used.
 
 ## c — can the on-prem runners reach the public advisory databases?
 
@@ -70,5 +72,43 @@ findings rather than an error, which reads exactly like a clean bill of health.
 
 → Resolution: the answer → decides whether 0140 recommends online scanning or an
 offline-database sync job
+
+2026-08-14 update — **resolved, as a preference rather than a constraint**: outbound access
+is assumed available, but an **offline database fed by a periodic sync is the preferred
+model**, and Trivy is believed to support it. So this is a design preference the
+recommendation should satisfy, not a restriction it must work around — which raises the
+weight of each candidate's offline story and of one specific hazard: a stale synced database
+and a clean repository produce identical output, so database-freshness assertion becomes part
+of the recommendation rather than an operational detail.
+
+## d — does an already-licensed commercial tool fall under D-0003? (a ruling, not a lookup)
+
+**This is a constraint-interpretation question and only the repo owner can settle it.** It
+was created by the answer to item b: the organisation **already licenses and uses Snyk**.
+
+D-0003 says shortlists contain "only free OSS runnable locally or in CI; no paid products",
+and its stated **Why** is: *"Procurement is off the table for this effort."* Snyk is already
+procured, so the *rationale* does not bar it while the *letter* does. The same tension
+applies to GitHub Advanced Security if the enterprise turns out to hold it. This is the same
+shape as D-0027's dependency ladder: a constraint whose boundary was never tested until a
+real case arrived.
+
+Three possible rulings. (i) **Letter holds** — D-0003 means what it says, 0140 shortlists
+only OSS, and Snyk is out of scope for evaluation even though it is paid for; the track may
+note it exists but may not recommend it. (ii) **Rationale holds** — already-licensed tools
+are in scope precisely because no procurement is required, so 0140 must evaluate Snyk
+alongside the OSS candidates and may recommend "configure what you already own". (iii)
+**Asymmetric** — an already-licensed tool may be evaluated and recommended, but may not be
+the *only* recommendation: the track must also name an OSS path, so the program never
+becomes dependent on a licence it does not control.
+
+Worth knowing while deciding: you said you are "not really married to it", and the reported
+difficulty configuring Snyk for this repository may have a concrete cause rather than a
+skills one — the repo is bun-only, and bun lockfile support is exactly where most scanners
+draw their line. That is under verification. If Snyk cannot parse `bun.lock`, ruling (i) and
+(ii) converge on the same practical answer.
+
+→ Resolution: the ruling → allocates a `D-####` refining D-0003's boundary, and sets whether
+0140 evaluates Snyk at all
 Answer here: when this item is resolved, append a new paragraph below it, starting
 `YYYY-MM-DD update — `.

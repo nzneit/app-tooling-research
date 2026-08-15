@@ -63,12 +63,28 @@ provides.
    no `yarn.lock`/`pnpm-lock.yaml`) worth its one line? It is prevention rather than
    remediation now, which makes it cheap — the same ratified-rule-plus-drift-test shape as
    D-0020, applied before the defect exists rather than after.
-7. **Reaching the advisory database from on-prem runners** — the runners are self-hosted and
-   on-prem. OSV-Scanner and its peers default to querying public advisory APIs. Does the
-   runner network segment permit outbound HTTPS to osv.dev and equivalents, or does this need
-   OSV-Scanner's documented offline mode fed by a periodic sync from a connected machine? A
-   setup dependency rather than a blocker, but one that changes the operational shape of any
-   recommendation, and one that is invisible until the first scan silently returns nothing.
+7. **Offline database with periodic sync — a stated preference, so design for it** — outbound
+   access is believed available, but the preferred model is an **offline vulnerability
+   database fed by a periodic sync** (facts/app-profile.md). So candidates are scored on their
+   offline story, not merely their online behaviour: how the database is obtained and
+   refreshed, its size, whether all ecosystems are covered offline, and how a sync from a
+   connected machine into an internal store would actually be wired. Attached hazard, and the
+   reason this is a key question rather than a deployment note: **a stale database and a clean
+   repository produce identical output.** Does each candidate warn when its database is old,
+   and can CI assert database freshness as a hard gate? Pair this with the parse-verification
+   assertion from the candidates section — together they are the difference between "the scan
+   passed" and "the scan actually happened against current data".
+8. **The tool already paid for** — the organisation **already licenses and uses Snyk**, while
+   reporting that it cannot configure it properly for this repository and is not committed to
+   keeping it. Whether this track may evaluate it at all is a D-0003 boundary ruling, requested
+   as intake [2026-08-14-supply-chain-gates](../../intake/2026-08-14-supply-chain-gates.md)
+   item d. Assuming evaluation is permitted, the question is not merely "is Snyk good" but
+   **"is the right answer to configure what you own, or to replace it"** — a materially better
+   question than the one this track started with, and one whose answer may be forced by
+   mechanics rather than preference: the repo is bun-only, and if Snyk cannot parse `bun.lock`
+   then the reported configuration difficulty has a concrete cause and the choice makes itself.
+   Whatever the ruling, the track should name an OSS path regardless, so the program does not
+   become dependent on a licence it does not control.
 6. **No-fix and transitive-only findings** — what disposition applies to advisories with
    no available fix or that are transitive-only: block, warn with expiry, or report only?
    Who re-triages when a fix later ships, so the gate does not simply get suppressed?

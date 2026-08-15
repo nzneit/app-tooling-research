@@ -64,17 +64,26 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - Rough peak message rate (msgs/sec): ~50 per second
 
 ## Environment
-- CI provider: **GitHub Actions on GitHub Enterprise**, application repo is **private**, with
-  **custom on-prem (self-hosted) runners of varying sizes** (2026-08-14, user). Two
-  consequences: runner hardware is the organisation's own choice, so memory-hungry
-  whole-repo tools are not capped by GitHub-hosted runner sizes; and code scanning on a
-  private repo depends on whether the enterprise already licenses Code Security /
-  Advanced Security — a question about existing entitlement, not a new purchase.
+- CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
+  **private**, with **custom on-prem (self-hosted) runners of varying sizes** (2026-08-14,
+  user). Consequences: runner hardware is the organisation's own choice, so memory-hungry
+  whole-repo tools are not capped by GitHub-hosted runner sizes; Enterprise *Cloud* means the
+  GHES air-gap caveat on advisory-database sync does not apply; and code scanning on a
+  private repo still depends on whether the enterprise licenses Code Security / Advanced
+  Security, which remains unanswered.
+- Scanning preference: an **offline vulnerability database fed by a periodic sync** is the
+  preferred operating model, though outbound access is believed available (2026-08-14, user).
 - Browser targets: Firefox version ~124 , Chromium latest - (latest - 2)
 - Test framework: **vitest 4.1.9** (2026-08-14, user) — retires an assumption standing since
   Wave 2
 - Approximate app scale (LOC or file count): 150,000 lOC
 - Team size: ~50
 
-## Vetoes
+## Vetoes and existing investments
 - Existing team decisions that would disqualify candidates:
+- **Snyk is already licensed and in use** (2026-08-14, user) — but the team reports not
+  knowing how to configure or use it properly for this repository, and is "not really
+  married to it". This is an existing investment rather than a veto, and it creates a live
+  tension with D-0003, whose letter bars paid products while its rationale ("procurement is
+  off the table") does not apply to something already bought. Ruling requested as intake
+  [2026-08-14-supply-chain-gates](../intake/2026-08-14-supply-chain-gates.md) item d.
