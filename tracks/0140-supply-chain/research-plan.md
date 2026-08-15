@@ -39,14 +39,19 @@ provides.
    tsconfig alias? This also has a review-legibility dimension: an `@appname/...` import is
    visually identical to a real scoped package in a diff, so the invariant is what makes
    "this scope is never real" checkable rather than remembered.
-4. **Provenance and signatures, now that the obvious tool is gone** — the control is still
-   distinct from CVE matching and still worth having, but `npm audit signatures` is
-   eliminated (it verifies npm's own install provenance, meaningless against a bun-managed
-   tree). So: does **bun** offer any equivalent integrity or provenance verification of its
-   own, does Sigstore attestation verification exist as a standalone OSS path, or is
-   provenance simply **unavailable** in this stack today? "Unavailable, and here is what
-   that leaves uncovered" is an acceptable and useful answer — silently dropping the control
-   because its tool vanished is not.
+4. **Provenance and signatures — the answer appears to be "unavailable", and that needs
+   saying out loud.** `npm audit signatures` was eliminated with the rest of the npm family,
+   and **bun has no provenance or signature verification of any kind** — no Sigstore, no
+   npm-attestation checking. Bun cannot even *emit* provenance on publish; the request to add
+   it ([oven-sh/bun#15601](https://github.com/oven-sh/bun/issues/15601)) has been open since
+   December 2024. What bun calls integrity is the ordinary SRI-hash-in-lockfile check, which
+   verifies that a download matches what the lockfile recorded — **consistent, not
+   authentic**: a maliciously published package would have its own hash faithfully recorded.
+   So the residual question is narrow: is there a standalone OSS path to verifying npm
+   provenance attestations independent of a package manager, and if not, the track must state
+   plainly that this control is **uncovered on this stack**, name what that leaves exposed,
+   and note `minimumReleaseAge` as the partial mitigation that exists instead. Silently
+   dropping the control because its tool vanished is the failure to avoid.
 5. **Lockfile-only versus install-time scanning** — since agent-authored changes can add
    dependencies as routine authorship, is scanning the committed lockfile in CI
    sufficient, or does the risk of a newly published malicious or typosquatted package
@@ -132,9 +137,14 @@ recommendation this track makes rather than an operational afterthought.
 
 **Live candidates:**
 
-- OSV-Scanner — https://github.com/google/osv-scanner — lockfile and SBOM matching against OSV.dev, SARIF output, no account (2.5.0, 2026-08-07, Apache-2.0). **bun.lock supported since v2.0.0 (Mar 2025)**. Has a documented offline mode, which matters given on-prem runners
-- Trivy — https://github.com/aquasecurity/trivy — filesystem, lockfile, image and misconfiguration scanning (0.74.0, 2026-08-14, Apache-2.0). **bun.lock supported since v0.63.0 (May 2025)**, though parser bugs persisted into 2026 — verify against a real lockfile
-- Grype + Syft — https://github.com/anchore/grype · https://github.com/anchore/syft — scanner plus SBOM generator. **bun.lock support only landed 2026-06-09** (Syft PR #4625). **Carries a silent-failure hazard: Grype v0.110.0 returned zero vulnerabilities with no error on a bun.lock** — a false negative, not a crash. Pin recent versions and verify the count is real
+- **`bun audit`** — https://bun.sh/docs/pm/cli/audit — **the candidate the list was missing**: built into Bun since v1.2.15 (2025-05-28), with `--audit-level`, `--prod`, `--ignore` and `bun audit fix` since v1.2.21. Zero new dependency, and it needs no registry reachability beyond what `bun install` already requires. Real gaps that argue for layering rather than replacing a scanner: it queries **npm's advisory bulk endpoint**, not OSV, so coverage differs; **`--json` output is unfiltered** — `--audit-level` and `--ignore` affect only the exit code, by design, so a CI gate parsing JSON must filter client-side; `--ignore` matches GHSA and numeric IDs but **not CVE IDs**, and has **no expiry mechanism** (directly relevant to Key question 6); there is **no SARIF output**; and JSON carries no dev-versus-prod classification. One hazard to design around: **exit code 1 means both "vulnerabilities found" and "the registry call failed"** — a fail-closed default, but indistinguishable causes
+- OSV-Scanner — https://github.com/google/osv-scanner — **the strongest of the three scanners on this stack.** Its one known bun.lock defect (a git short-hash crash) was fixed in **v2.3.8 (2026-05-08)** and no bun issues remain open. Decisively for the standing silent-zero hazard, it ships a **built-in loud-failure signal: exit code 128 means "no packages found"**, distinct from exit 0 for clean — so CI can gate on 128 rather than inventing a package-count assertion. **Pin ≥ 2.3.8; current 2.5.0** (Apache-2.0). Documented offline mode, which matters given the periodic-sync preference
+- Grype + Syft — https://github.com/anchore/grype · https://github.com/anchore/syft — **Syft v1.46.0 (2026-06-26, bundled in Grype v0.115.0) added a dedicated bun.lock parser**, which structurally prevents the earlier mis-routing into the yarn-v2 parser that made v0.110.0 report zero findings silently. But that fix is **maintainer-asserted, not independently confirmed** (grype#3559 remains open), and the parser **silently skips individual malformed entries by design** — so an external package-count assertion is required on every run regardless of version. **Pin Grype ≥ 0.115.0; current 0.117.0** (Apache-2.0)
+- Trivy — https://github.com/aquasecurity/trivy — **mark degraded and unverified for this stack.** Two known bun.lock defects and **no current version avoids both**: a false-positive issue (#10556) was closed by an auto-bot without a real fix, and a false-negative affecting nested and deduplicated dependencies (PR #11071, opened 2026-08-11) is **still unmerged**. A false negative on transitive dependencies is the worst possible failure for this track's purpose. Keep it in the comparison for its offline-mirroring story, but it cannot be recommended for bun.lock coverage until #11071 ships (0.74.0, Apache-2.0)
+- **`minimumReleaseAge`** — https://bun.sh/docs/pm/cli/install#minimum-release-age — not a scanner and **not substitutable for one**, but a genuinely distinct control with **no analog anywhere else in this list**: a bunfig setting that refuses to resolve any version published more recently than N seconds, with a heuristic that extends the window when it detects a burst of releases at the cutoff. It targets the just-published-malicious-version attack that lockfile scanning structurally cannot catch, because no advisory exists yet. Evaluate as a companion policy alongside whatever scanner wins
+- `bun pm licenses` — https://bun.sh/docs/pm/cli — license inventory with dev tagging and JSON output; minor hygiene value the list did not otherwise cover, noted rather than shortlisted
+
+**Checked and explicitly not a candidate**: Bun's **Security Scanner API** is an extension point, not a tool — its own documentation flags the example package as fictional, and the only real implementations are a 20-star template, a 5-star community scanner, and an archived Socket.dev binding (Socket being a paid product, excluded by D-0003 regardless).
 - Renovate — https://github.com/renovatebot/renovate — automated update PRs; **mature bun manager since 2024 and handles both lockfile formats** by delegating to the bun CLI rather than parsing bytes. Its position strengthens considerably given Dependabot's gap below. **AGPL-3.0 — flag the copyleft** (44.30.2, 2026-08-14)
 - Dependabot — https://github.com/dependabot/dependabot-core — **status materially corrected**: bun **version updates** are GA (since April 2025, text lockfile only), but **security updates are marked Not Supported for bun**, and Bun is absent entirely from GitHub's Dependency Graph ecosystem table — so **no Dependabot alerts fire for a bun manifest**. It delivers dependency freshness, not vulnerability coverage. It cannot be this track's security answer
 - guarddog — https://github.com/DataDog/guarddog — local heuristic scanner for malicious and typosquatted packages, entirely offline. **Unaffected by the lockfile question** — it scans named packages, never a lockfile (Apache-2.0)
