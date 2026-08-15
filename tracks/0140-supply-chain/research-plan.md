@@ -39,16 +39,33 @@ provides.
    tsconfig alias? This also has a review-legibility dimension: an `@appname/...` import is
    visually identical to a real scoped package in a diff, so the invariant is what makes
    "this scope is never real" checkable rather than remembered.
-4. **Provenance and signatures as a distinct control** — beyond CVE matching, what does
-   verifying package provenance buy here? `npm audit signatures` verifies registry
-   signatures and Sigstore-backed provenance attestations for packages that publish them,
-   at no cost and with no new dependency. What fraction of this app's tree actually
-   publishes provenance, and is a provenance check worth gating on, reporting on, or
-   skipping?
+4. **Provenance and signatures, now that the obvious tool is gone** — the control is still
+   distinct from CVE matching and still worth having, but `npm audit signatures` is
+   eliminated (it verifies npm's own install provenance, meaningless against a bun-managed
+   tree). So: does **bun** offer any equivalent integrity or provenance verification of its
+   own, does Sigstore attestation verification exist as a standalone OSS path, or is
+   provenance simply **unavailable** in this stack today? "Unavailable, and here is what
+   that leaves uncovered" is an acceptable and useful answer — silently dropping the control
+   because its tool vanished is not.
 5. **Lockfile-only versus install-time scanning** — since agent-authored changes can add
    dependencies as routine authorship, is scanning the committed lockfile in CI
    sufficient, or does the risk of a newly published malicious or typosquatted package
    justify an install-time guard or a local heuristic scanner as a second layer?
+6. **Two package managers, one project — the drift hazard** — npm and bun are both in use.
+   Nothing in the candidate list cross-validates one lockfile against the other, which
+   creates a failure mode worse than a gap: if a `package-lock.json` also exists, an
+   npm-shaped scanner runs **green against a tree bun never installed**, producing false
+   confidence rather than a visible error. And the tool most likely to be reached for
+   reflexively is exactly the eliminated npm-audit family. Is the right answer architectural
+   — one authoritative lockfile, plus a CI invariant that fails if the other reappears —
+   rather than tool selection? This is the same silent-false-negative shape as D-0020, and
+   deserves the same treatment: a ratified rule paired with a test that asserts it.
+7. **Reaching the advisory database from on-prem runners** — the runners are self-hosted and
+   on-prem. OSV-Scanner and its peers default to querying public advisory APIs. Does the
+   runner network segment permit outbound HTTPS to osv.dev and equivalents, or does this need
+   OSV-Scanner's documented offline mode fed by a periodic sync from a connected machine? A
+   setup dependency rather than a blocker, but one that changes the operational shape of any
+   recommendation, and one that is invisible until the first scan silently returns nothing.
 6. **No-fix and transitive-only findings** — what disposition applies to advisories with
    no available fix or that are transitive-only: block, warn with expiry, or report only?
    Who re-triages when a fix later ships, so the gate does not simply get suppressed?
@@ -78,19 +95,32 @@ provides.
 
 ## Candidates
 
-- OSV-Scanner — https://github.com/google/osv-scanner — matches the lockfile (and SBOMs) against the OSV.dev database with SARIF output, no account required (2.5.0, 2026-08-07, Apache-2.0)
-- npm audit — https://docs.npmjs.com/cli/v10/commands/npm-audit — built into the npm CLI, checks the lockfile against the GitHub Advisory Database; no independent release cycle (npm 12.0.2, 2026-07-29)
-- npm audit signatures — https://docs.npmjs.com/cli/v10/commands/npm-audit — the **provenance and signature** control, distinct from CVE matching: verifies registry signatures and Sigstore-backed provenance attestations; already bundled, zero new dependency
-- audit-ci — https://github.com/IBM/audit-ci — CI wrapper turning audit output into a pass/fail exit code with severity thresholds and an allowlist (7.1.0, npm 2024-07-03; repo pushed 2025-09-17 — publish gap to weigh under maintenance health)
-- better-npm-audit — https://github.com/jeemok/better-npm-audit — adds per-advisory ignore rules **with expiry dates**, directly relevant to Key question 6 (3.11.0, npm 2024-09-09; repo actively pushed 2026-07-20)
-- Trivy — https://github.com/aquasecurity/trivy — general-purpose scanner covering filesystem, lockfile, image, and misconfiguration, SARIF output, fully free CLI (0.74.0, 2026-08-14, Apache-2.0)
-- Grype — https://github.com/anchore/grype — vulnerability scanner for filesystems and SBOMs, usually paired with Syft (0.117.0, 2026-08-10, Apache-2.0)
-- Syft — https://github.com/anchore/syft — SBOM generator (CycloneDX/SPDX) feeding Grype (1.51.0, 2026-08-10, Apache-2.0)
-- lockfile-lint — https://github.com/lirantal/lockfile-lint — validates lockfile integrity and asserts every resolved package comes from an expected registry host; the cheap CI invariant candidate for Key question 3 (5.0.1, 2026-08-13, Apache-2.0)
-- npq — https://github.com/lirantal/npq — install-time guard running heuristic and advisory checks (typosquatting, new or unmaintained packages, install scripts) before packages land on disk; basic use needs no API key (3.26.0, 2026-08-13, Apache-2.0)
-- guarddog — https://github.com/DataDog/guarddog — local static and heuristic scanner flagging malicious or typosquatted packages entirely offline (Apache-2.0, repo pushed 2026-08-14)
-- Renovate — https://github.com/renovatebot/renovate — self-hostable CLI for automated update PRs with fine-grained grouping; **AGPL-3.0, flag the copyleft** (44.30.2, 2026-08-14)
-- Dependabot — https://github.com/dependabot/dependabot-core — GitHub-native update PRs and security alerts; engine is MIT and free, but only applies if the repo is hosted on GitHub
+**2026-08-14 — the bun lockfile fact eliminated five candidates before the survey started.**
+The app uses npm *and* bun with a **bun lockfile committed** (facts/app-profile.md). Bun has
+two formats and every tool draws its line at exactly that boundary: the binary `bun.lockb`
+(default before Bun 1.2) is unreadable to essentially everything, while the text/JSONC
+`bun.lock` (opt-in from 1.1.39, default from 1.2, current Bun 1.3.x) is widely supported.
+**Which file this repo commits is therefore the single gating fact for this track** — asked
+as intake [2026-08-14-supply-chain-gates](../../intake/2026-08-14-supply-chain-gates.md)
+item a. Everything below assumes the text format; on binary, the surviving list shrinks to
+Renovate, knip, and guarddog.
+
+**Live candidates:**
+
+- OSV-Scanner — https://github.com/google/osv-scanner — lockfile and SBOM matching against OSV.dev, SARIF output, no account (2.5.0, 2026-08-07, Apache-2.0). **bun.lock supported since v2.0.0 (Mar 2025)**. Has a documented offline mode, which matters given on-prem runners
+- Trivy — https://github.com/aquasecurity/trivy — filesystem, lockfile, image and misconfiguration scanning (0.74.0, 2026-08-14, Apache-2.0). **bun.lock supported since v0.63.0 (May 2025)**, though parser bugs persisted into 2026 — verify against a real lockfile
+- Grype + Syft — https://github.com/anchore/grype · https://github.com/anchore/syft — scanner plus SBOM generator. **bun.lock support only landed 2026-06-09** (Syft PR #4625). **Carries a silent-failure hazard: Grype v0.110.0 returned zero vulnerabilities with no error on a bun.lock** — a false negative, not a crash. Pin recent versions and verify the count is real
+- Renovate — https://github.com/renovatebot/renovate — automated update PRs; **mature bun manager since 2024 and handles both lockfile formats** by delegating to the bun CLI rather than parsing bytes. Its position strengthens considerably given Dependabot's gap below. **AGPL-3.0 — flag the copyleft** (44.30.2, 2026-08-14)
+- Dependabot — https://github.com/dependabot/dependabot-core — **status materially corrected**: bun **version updates** are GA (since April 2025, text lockfile only), but **security updates are marked Not Supported for bun**, and Bun is absent entirely from GitHub's Dependency Graph ecosystem table — so **no Dependabot alerts fire for a bun manifest**. It delivers dependency freshness, not vulnerability coverage. It cannot be this track's security answer
+- guarddog — https://github.com/DataDog/guarddog — local heuristic scanner for malicious and typosquatted packages, entirely offline. **Unaffected by the lockfile question** — it scans named packages, never a lockfile (Apache-2.0)
+- npq — https://github.com/lirantal/npq — install-time guard. **Bun support is undocumented**; documented passthrough covers yarn and pnpm only. Verify before relying on it (3.26.0, 2026-08-13)
+
+**Eliminated by the bun lockfile fact — recorded so the survey does not re-derive them:**
+
+- **npm audit** and **npm audit signatures** — both hard-require a package-lock or shrinkwrap; `--no-package-lock` resolves fresh from the registry, ignoring what bun actually installed. `audit signatures` verifies npm's own install provenance, which is meaningless against a bun-managed tree. This also removes the provenance control Key question 4 was built around, so that question is re-aimed below
+- **audit-ci** — confirmed broken on bun (issue #344); its own documented workaround is exporting to a Yarn v1 lockfile and auditing that
+- **better-npm-audit** — wraps `npm audit`, inherits the same requirement; also ~2 years since its last publish
+- **lockfile-lint** — `--type` accepts only `npm` or `yarn`; it does not even support pnpm
 
 ## Rubric weights
 
