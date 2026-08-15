@@ -99,7 +99,15 @@ strong / adequate / weak with a sentence of evidence (spec: "Shared evaluation r
 
 ## Facts needed
 
-- CI provider — decides whether SARIF upload is usable and whether Dependabot is eligible at all
+- CI provider — **resolved: GitHub Actions** (facts/app-profile.md), so Dependabot is eligible in principle
+- **The app repository's visibility — public or private.** This is load-bearing and is *not*
+  answered by knowing the CI provider. GitHub code scanning, the destination that makes SARIF
+  output valuable, is free on public repositories but gated behind paid GitHub Advanced
+  Security on private ones. Several candidates here were credited for SARIF output; if the app
+  repo is private and unlicensed for GHAS, that advantage is unusable under D-0003 and those
+  tools fall back to exit codes, job summaries, and PR comments. The same question affects
+  which Dependabot features are free. (Note: the *research* repo is public; the app repo's
+  visibility is a separate and currently unknown fact.)
 - Package manager and lockfile format (npm, pnpm, or yarn) — decides which audit-based candidates apply
 - Whether `@appname` is an unregistered scope or already owned by the team — needed before the dependency-confusion invariant can be written
 - Whether Dependabot or Renovate runs today — greenfield versus must-integrate

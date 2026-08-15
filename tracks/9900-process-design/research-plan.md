@@ -165,13 +165,17 @@ resolved 2026-08-14):
 - **Resolved** — the budget is **net steps hold**, exceptions need a reviewed justification
 - **Resolved** — all three cost units matter (wall-clock, human review time, agent tokens),
   with none prioritised over the others in general; controls are priced in all three
-- **Resolved, and it matters**: **this repo has no CI.** There is no `.github/workflows/`
-  directory; `check-docs.ts` runs pre-commit only. (The app under study uses GitHub Actions,
-  but that is a different repository.) So **D-0027's rung 2 — "a binary in CI but not
-  pre-commit" — currently has nowhere to run**, and the ladder collapses to rungs 0, 1, and 3
-  for this repo. That sharpens the Vale question considerably: without CI, the realistic
-  options are replicate-in-house or every-contributor-installs-it, with the middle path gone.
-  It also raises a question this track should answer rather than assume: **should this repo
-  have CI at all?** That is a scripts-and-process question, squarely in scope, and it changes
-  what the dependency ladder can offer
+- **Resolved**: **this repo has no CI today, but adding it is free.** There is no
+  `.github/workflows/` directory, so `check-docs.ts` runs pre-commit only. The repo is
+  **public**, which means GitHub Actions costs nothing here. (The app under study also uses
+  GitHub Actions, but that is a different repository — do not conflate the two.) So D-0027's
+  rung 2 — "a binary in CI but not pre-commit" — is **unavailable today and free to make
+  available**: the blocker is setup effort, not cost or infrastructure. That keeps the middle
+  rung of the ladder genuinely in play for the Vale question, rather than forcing a binary
+  choice between replicating in-house and making every contributor install a tool.
+  The track should therefore answer, rather than assume: **should this repo have CI?** It is
+  a scripts-and-process question, squarely in scope, and it decides what the dependency ladder
+  can actually offer. Note the interaction with the ceremony budget: CI moves cost from
+  contributor wall-clock to pipeline time, which is a reallocation across the three cost units
+  the budget ruling says all matter — not a free win
 - The seed corpus in [seed-defect-corpus.md](seed-defect-corpus.md), already gathered
