@@ -203,6 +203,35 @@ one.
   the one-question-per-letter shape every later file uses. It was left out of scope rather
   than retrofitted.
 
+## K. The append-only answer convention goes stale when an item is answered in two passes
+
+Found 2026-08-14, the same way as category H — the user noticed it, not a tool. Intake item
+`2026-08-14-9900-process-scope.md` item b was answered in two passes: the main ruling first,
+the deferred sub-question days later. The first pass's resolution paragraph contained the
+sentence *"The sub-question was not answered and stays open"*. When the second answer arrived
+and was appended below it, that sentence became **false**, and nothing flagged it. The file
+asserted both that a question was open and, four lines later, its answer.
+
+**Why this is its own category, and a pointed one.** The intake-template design panel
+(category J) chose the append-a-dated-paragraph convention specifically because five of six
+real answers had already converged on it unprompted. That reasoning was sound. But this is the
+convention's **first observed failure mode**, and it is intrinsic rather than incidental:
+append-only narrative paragraphs can contradict each other, because nothing rereads the
+earlier ones. The more prose a resolution carries — and this program's resolutions carry a
+lot, deliberately — the more surface there is to go stale.
+
+Note what this is *not*. It is not the per-item-status gap the panel scoped out (item b's
+status was never ambiguous; it was answered). It is narrower and harder: **a superseded claim
+inside a durable narrative**, which no status field would have caught. The repo already has a
+convention for exactly this problem one document over — `DECISIONS.md` marks superseded
+entries in place rather than deleting them — and the intake convention has no equivalent.
+
+The agent compounded it: the second answer *was* propagated correctly into the 9900 research
+plan, but the stale sentence in its source document was left standing, and the answer was
+never acknowledged back to the user. So the derived artifact was right while the source of
+truth was self-contradictory — the inverse of the usual drift direction, and a reminder that
+propagating a change is not the same as closing it out.
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got
