@@ -128,6 +128,41 @@ absence. The general question it raises for the survey: which templates encode a
 that only works because an agent silently supplies the missing step, and what happens to
 those documents when a human uses them unaided?
 
+## I. A convention that lives only in an execution record gets silently re-derived
+
+Found 2026-08-14 when the user asked whether the "design-it-twice pattern" an agent had
+just invoked was durably written down anywhere. Auditing the answer showed three layers,
+only two of them durable:
+
+1. **Durable**: `.claude/skills/codebase-design/DESIGN-IT-TWICE.md`, vendored verbatim
+   under D-0017. Specifies framing the problem space, **3+** parallel agents each under a
+   different design constraint, then compare. Written entirely in code-design vocabulary —
+   module, seam, adapter, interface types and methods.
+2. **Durable but not reusable**: `docs/superpowers/plans/2026-08-14-wave-3-spikes.md`
+   Tasks 4 and 7 elaborate a concrete instantiation — four agents plus a judge, named
+   constraints, named comparison axes. But a plan is an **execution record for one
+   completed wave**, not a convention. Nothing marks it as the way panels are run here, and
+   nothing would lead a future track to it.
+3. **Not durable at all**: the shape actually used for the intake-template design — a
+   *grounding phase* (audit real usage, survey comparable systems) feeding two variants and
+   a judge. The grounding phase appears in neither the skill nor the plan; the skill's step
+   one is to *write* a framing, not research one. Two variants were used where the skill
+   mandates three or more, a deviation made silently rather than recorded as a ruling.
+
+**Why this is its own category.** Category H was a template whose affordances did not match
+its use. This is the inverse: a pattern with no template at all, whose authoritative text
+covers a *different domain* (code interfaces, not documents), so every reuse quietly
+reinvents the parts the text does not cover — and reinvents them differently each time.
+Nothing detects the drift, because each instance looks locally reasonable and there is no
+canonical version to diverge from. The agent even described its improvised shape to the
+user as "the repo's own pattern", which is the failure mode in one phrase: **tacit
+convention presented as established convention.**
+
+Open question this raises for the survey, beyond the intake template: which other practices
+in this repo exist only inside a plan or a transcript — adversarial review, the completeness
+critic, the gap sweep, survey workflow structure — and would a future track find them? The
+answer for all four is currently no.
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got
