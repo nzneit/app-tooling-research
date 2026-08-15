@@ -163,6 +163,46 @@ in this repo exist only inside a plan or a transcript — adversarial review, th
 critic, the gap sweep, survey workflow structure — and would a future track find them? The
 answer for all four is currently no.
 
+## J. Findings scoped out of the intake-template fix, recorded so they are not lost
+
+A design panel on the category-H defect (2026-08-14) audited all five intake files — 26
+lettered items — and produced hard counts. Its judged recommendation was deliberately
+narrow, so these adjacent findings were **explicitly scoped out rather than solved**. They
+are recorded here because a scoped-out finding that is not written down is just a forgotten
+one.
+
+- **File-level `Status` cannot express partial completion.** The wave-2 file (3 of 12 items
+  resolved) and the 0100 file (0 of 5) both read `**Status**: open` and are indistinguishable
+  to a reader. A third value would be a cheap validator edit. Not done: it is a different
+  defect from "no answer field", and unlike that one it has never actually been reported by a
+  reader.
+- **A labelled fill-in field would likely go unfilled.** Strong evidence: the existing
+  `→ Resolution:` line appears in 9 real items and was left as unedited boilerplate in **9 of
+  9**. Real answers are multi-paragraph and asymmetric — 0090 item a's runs about eight lines
+  and is explicitly half-resolved — so a single-line `**Answer**:` slot is the wrong shape for
+  content that five independent authors already proved wants paragraph form. This is a useful
+  general lesson about template fields, not just this one.
+- **Conventions propagate by imitation, and that works.** Five of the six back-filled answers
+  independently converged on the identical unprompted shape (a new paragraph opening
+  `YYYY-MM-DD update — `) across two different files, with zero instruction anywhere. The
+  minimal fix is therefore to *name the convention that already emerged*, not to invent one.
+  Worth weighing against category I, where imitation produced drift instead: the difference
+  seems to be that intake answers sit visibly beside each other in sibling files, while design
+  panels live in transcripts nobody re-reads.
+- **Ephemeral handles are being cited as durable provenance.** D-0021's `From:` field reads
+  "intake/2026-08-14-0090-app-facts.md **item b** resolution", citing an intake item's letter
+  from another document — while the spec's intake convention calls those letter handles
+  "ephemeral by design". Two parts of the doc system contradict each other. This is a
+  ledger-citation-discipline question, not a template question, and belongs to 9900 proper.
+- **Intake cross-references are always prose, never links.** Zero markdown link syntax across
+  all five files; every `D-####` and `facts/app-profile.md` reference is free text, so
+  `checkLinks` cannot see any of them. Building a checker would require first changing the
+  authoring convention.
+- **One file does not fit the template's shape at all.** `2026-08-13-app-profile.md` groups
+  7–11 facts under a single lettered item and resolves them by inline strikethrough, unlike
+  the one-question-per-letter shape every later file uses. It was left out of scope rather
+  than retrofitted.
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got
