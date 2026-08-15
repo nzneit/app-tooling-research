@@ -92,6 +92,17 @@ structure, or the shared rubric; those are a separate and larger track.
 11. **Dogfooding** — should this track's own plan and report be the first artifacts held to
     its recommendations, and does that pilot happen before or after the recommendation is
     accepted?
+12. **Where lessons durably live** — the repo has a stable home for decisions
+    (`DECISIONS.md`), conventions (`CLAUDE.md` and `.claude/skills/`), app facts
+    (`facts/app-profile.md`), and open questions (`intake/`). It has none for observed
+    defects and lessons. [seed-defect-corpus.md](seed-defect-corpus.md) was written as this
+    track's survey input, but categories H through K were all found *after* seeding, by
+    ordinary work — so it is behaving as a living register while sitting inside a track that
+    has a lifecycle and will one day close. Should the register be promoted to a durable
+    repo-level artifact with a pointer from `CLAUDE.md`, folded into an existing home, or
+    deliberately frozen as historical input when this track completes? It is priced like any
+    other control: a register nobody appends to is worse than no register, so an answer that
+    keeps it alive must name who appends to it and at which lifecycle moment.
 
 ## Candidates
 
