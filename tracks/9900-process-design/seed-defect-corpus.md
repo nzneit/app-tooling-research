@@ -110,6 +110,24 @@ entry carries its own correction note. One instance, but structurally unguarded:
 cross-validates a `D-####` entry against the report it cites, and the append-only
 convention makes such errors permanent-with-annotation.
 
+## H. The intake template has no answer affordance
+
+Found 2026-08-14 the only way this class of defect is ever found — a human tried to use the
+template as written and asked where they were supposed to answer. `intake/_TEMPLATE.md`
+gives each item a `→ Resolution:` line, but that line documents the *consequence* of
+resolving ("updates facts/app-profile.md and/or allocates D-####"), not a place to put an
+answer. There is no answer field, so in practice every intake item so far has been answered
+in conversation and back-filled by an agent as a dated update block — a convention that
+exists nowhere in the template and that a reader of the file alone could not infer.
+
+This is worth more than its size. It is the first observed defect in the class **"the
+template's affordances do not match how the artifact is actually used"**, which no
+validator can detect (the file is perfectly conformant) and no agent reliably notices,
+because agents infer the missing convention from context instead of tripping over its
+absence. The general question it raises for the survey: which templates encode a workflow
+that only works because an agent silently supplies the missing step, and what happens to
+those documents when a human uses them unaided?
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got
