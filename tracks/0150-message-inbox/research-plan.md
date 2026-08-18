@@ -110,29 +110,99 @@ resumes its session, and replays — repeatedly. The report should establish whe
 happens today, because if it does it is a live behaviour independent of the inbox, and
 raising keepalive above ~120 s is the obvious mitigation.
 
-## What "undefined" actually means, and why the broker product is now the critical unknown
+## The broker is ActiveMQ Classic, and it changes the premise
 
-Per-session queue depth and in-flight window were reported as undefined. **An unconfigured
-setting is a default in force, not an absent limit**, and the defaults were measured across the
-mainstream brokers during plan grounding. They do not merely differ in magnitude — they invert
-in behaviour, which means the design cannot be finished without knowing the product:
+**None of the native-broker defaults apply.** ActiveMQ Classic is a JMS broker with an MQTT
+transport layered over it, so the earlier survey of Mosquitto/EMQX/HiveMQ/VerneMQ/AWS defaults
+is superseded wholesale for this app; that comparison is retained only in the intake file as
+the record of why the product mattered. Findings below were read from `apache/activemq` source
+and Apache JIRA and then put to an adversarial refuter, which overturned two of them. Claims
+were checked against release tag `activemq-6.3.1`, not only `main` (an unreleased
+`6.4.0-SNAPSHOT`); the report re-pins citations to whichever tag the operator actually runs.
 
-| | queue depth | in-flight | session expiry | drops | retransmits while connected |
-|---|---|---|---|---|---|
-| Mosquitto | 1000 | 20 | never | newest | no (since 1.5) |
-| EMQX | 1000 | 32 | 2 h | **oldest** | no (v5; v4 was 30 s) |
-| HiveMQ CE | 1000 | 50 | never | newest | unverified |
-| VerneMQ | 1000 online + 1000 offline | 20 | never | newest | **yes, 20 s** |
-| AWS IoT | no published per-session depth | 100 (fixed) | 1 h | newest | **yes, up to 1 h** |
+### The premise question: who publishes to those 6 topics?
 
-Four consequences, each of which changes code. **Overflow is silent**: the broker drops queued
-messages with no protocol signal to the client, so the only way to notice is application-level
-gap detection. **Drop direction inverts** — EMQX punches a hole in the middle of the record
-while the others truncate the tail, and recovery logic differs completely. **Three brokers
-retransmit under deferral**, turning the design's own latency into duplicate deliveries, which
-the inbox must absorb idempotently on packet identity. **Session expiry splits the field**, so
-"an abandoned tab queues forever" is true on three brokers and false on two — where the
-opposite risk applies and a backgrounded tab silently loses its subscriptions and its queue.
+**This is now the first thing the track must establish, because one answer makes the whole
+design decorative.** `MQTTProtocolConverter` derives a delivered message's QoS from the JMS
+persistence flag with the ternary **inverted** —
+`qoS = message.isPersistent() ? QoS.AT_MOST_ONCE : QoS.AT_LEAST_ONCE` — and that line is
+reached whenever the JMS property `ActiveMQ.MQTT.QoS` is absent, which is the case for every
+message originating from an OpenWire/JMS, STOMP, AMQP, or Camel producer. So if the publishers
+on those 6 topics are not themselves MQTT clients — the normal case in a shop running Classic —
+their messages arrive at the browser **at QoS 0**: no PUBACK exists to defer, the subscription
+is not durable, nothing is retained while offline, and the inbox degrades to fire-and-forget
+with permanent loss on a tab crash. This is **AMQ-7045**, open since 2018 with no fix version
+and unchanged in 6.3.1. Establish the producer technology for those 6 topics before any other
+work in this track.
+
+### What holds if the producers are MQTT clients
+
+- **Durability is per-subscription and QoS-gated.** A durable JMS subscription is created only
+  when `cleanSession=false` **and** clientId is non-null **and** requested QoS ≥ 1. So the 6
+  QoS-1 topics get real durable subscriptions while the other ~34 QoS-0 subscriptions get no
+  session state and **are not restored on reconnect** — a deviation from MQTT 3.1.1 §3.1.2.4.
+  The client must re-SUBSCRIBE everything on every reconnect or go silently deaf on 34 of 40
+  topics. **This reverses what an earlier draft of this plan said**: `resubscribe: true` is not
+  redundant here, it is *required*, and the same wrong claim was written into 0060's report
+  annotation and has been corrected there.
+- **The two tiers have opposite loss semantics.** The shipped
+  `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable
+  `TopicSubscription`s, so the 34 QoS-0 topics silently discard oldest beyond prefetch+1000,
+  while the 6 durable ones never drop — they accumulate against disk instead.
+- **Deferral gets real backpressure, and is safe from retransmission.** Durable MQTT
+  subscriptions take `DEFAULT_DURABLE_TOPIC_PREFETCH` = **100**, per subscription — so at most
+  6×100 = 600 outstanding, not the feared ~32k (which applies only to QoS-0/clean-session
+  subscriptions). And ActiveMQ performs **no in-connection retransmission**: there is no timer
+  on the delivery path, so the broker will never grow impatient mid-commit. Redelivery happens
+  only on reconnect, in producer order. `redeliveryPolicy`/`maximumRedeliveries` do not apply
+  to the MQTT path at all.
+- **`sessionPresent` is hardcoded to 0** in the CONNACK codec, on every connection. No recovery
+  logic may read it.
+- **DUP is a hint, not a guarantee.** The refuter overturned an investigator finding here: DUP
+  *is* set on reconnect redelivery, via a per-clientId packet-id map — but only within one
+  broker process lifetime, only under a 5000-entry LRU, and only until some connection uses
+  `cleanSession=true`. Useful as a corroborating signal; never as the dedup mechanism.
+
+### Two ship-blockers that belong to operations, not the front end
+
+1. **Abandoned durable subscriptions are never reaped, and a full store blocks publishers.**
+   `offlineDurableSubscriberTimeout` defaults to `-1`, and the cleanup `Timer` is not merely
+   idle — `TopicRegion` never constructs it. Meanwhile `sendFailIfNoSpace` defaults false with
+   no timeout, so at store exhaustion producing threads call `waitForSpace()` and **block
+   indefinitely**. Combined: every cleared browser profile, new device, or regenerated clientId
+   mints a permanent durable subscription that accretes forever, and the eventual failure is
+   not "this client misses messages" but "every publisher to the broker wedges". Setting
+   `offlineDurableSubscriberTimeout` is a prerequisite to shipping this design, not a tuning
+   nicety — and that makes broker ownership part of the track's audience.
+2. **Every subscription is created `retroactive(true)`.** A new durable subscription's starting
+   position is the union of message sequences still outstanding for *every* durable subscriber
+   on that topic — so a first-time clientId inherits the undrained backlog of every abandoned
+   one, delivered at QoS 1 into the deferred-PUBACK path, bounded by disk rather than by
+   5 msg/s. This is also the likely mechanism behind **AMQ-9592** (open, affects 5.18.5/6.1.3):
+   messages published while one clientId was offline delivered to a different clientId. If any
+   of the 6 topics are user-scoped, that is a confidentiality question and topic-level
+   authorization must do the isolating, not the session.
+
+### Smaller, but each changes code
+
+- **Duplicate clientId over WSS is *rejected*, not stolen.** `allowLinkStealing` defaults false
+  and the WebSocket transport factories — unlike the four MQTT TCP factories — never set it. So
+  a second tab presenting the same persisted clientId gets CONNACK 0x02 and its socket closed;
+  the first tab is untouched. **This corrects this plan's earlier claim that tabs would evict
+  each other in a loop** — they do not, on this transport. The second tab simply fails, which
+  is a different bug with the same verdict: multi-tab does not work today. Note the remedy is
+  booby-trapped — `setAllowLinkStealing()` on `<transportConnector>` writes a field nothing
+  reads; it only takes effect inside the URI query string.
+- **No poison-message escape.** With no redelivery policy on the MQTT path and no DLQ routing,
+  a message the browser can never commit is redelivered on every reconnect forever and wedges
+  that subscription's progress. The inbox needs its own give-up-and-acknowledge rule.
+- **Topic names are transposed both ways**: `/`↔`.`, `#`↔`>`, `+`↔`*`. A topic containing a
+  literal `.` therefore aliases onto a different MQTT topic. Audit the 6 filters for this
+  before treating topic strings as identity.
+- **Version floor is a security floor.** CVE-2026-40046's fix was missed for all 6.0.0+ until
+  6.2.4, and a `wss://` connector decodes MQTT with the same class as an `mqtt://` one — so the
+  advisory wording "not enabling mqtt transport connectors are not impacted" does not exempt
+  this deployment. Establish the running version.
 
 ## Key questions
 
@@ -228,15 +298,17 @@ opposite risk applies and a backgrounded tab silently loses its subscriptions an
    some rows are durable (it is not, if the queue is ever reached), and what the drain costs
    the other 34 topics, which queue behind the same serialized pump and the same ordered ack
    release.
-5a. **What does the broker actually do under deferral — and which broker is it?** Not a
-   detail, and not answerable from the spec: [MQTT-4.4.0-1] requires redelivery *only* on
-   reconnect, so in-connection retransmission is a broker choice. VerneMQ retransmits after
-   20 s, NanoMQ after 10 s, AWS for up to an hour; Mosquitto and EMQX 5 do not. On a
-   retransmitting broker the design's own commit latency manufactures the duplicates the inbox
-   exists to suppress — self-inflicted, absorbed correctly, but it must be expected rather than
-   discovered. Combined with the drop-direction and expiry splits in the table above, **naming
-   the broker product and version is the single highest-value fact still missing** (intake item
-   h). The report must not write a design that is only correct on one of them without saying so.
+5a. **What does the broker actually do under deferral? — answered, and favourably.** ActiveMQ
+   Classic performs **no in-connection retransmission**: there is no timer on the delivery path,
+   so a message the browser is still committing will never be re-sent underneath it. Deferral is
+   safe from the angle that would have made it self-defeating on VerneMQ or NanoMQ. Redelivery
+   is coupled entirely to connection loss — anything unacknowledged when the socket dies comes
+   back in bulk on reconnect, in producer order, bounded per subscription by the prefetch of
+   100. What remains for the report: that ActiveMQ has **no poison-message escape** on the MQTT
+   path (no redelivery cap, no DLQ routing), so a message the inbox can never commit is
+   redelivered on every reconnect forever and permanently wedges that subscription. A
+   give-up-and-acknowledge rule is therefore mandatory, and it needs a policy: after how many
+   attempts, recorded where, and surfaced to whom.
 6. **Atomicity or durability — which guarantee is actually being bought?** These are not the
    same purchase on the stated browser matrix. IndexedDB *does* give all-or-nothing commit
    across object stores on both engines. It does *not* give a flush guarantee: Firefox has
@@ -279,11 +351,15 @@ opposite risk applies and a backgrounded tab silently loses its subscriptions an
     different app versions share one origin database and one `versionchange` event, which
     blocks until every other connection closes.
 11. **Multi-tab: who owns the session, and who owns the inbox?** Two questions now, and the
-    first may be a live defect rather than a design choice. MQTT requires a broker to
-    disconnect an existing client when a second connects with the same ClientId
-    ([MQTT-3.1.4-2]), so a *shared* persisted clientId means two tabs evict each other in a
-    loop; a *per-tab* clientId instead leaves an abandoned persistent session queueing
-    messages on the broker for every tab ever closed. Which it is, is intake item f. Second,
+    first is a live defect rather than a design choice — but not the one this plan first
+    described. [MQTT-3.1.4-2] requires a broker to disconnect the existing client, and native
+    brokers do; **ActiveMQ Classic over WSS does not**, because `allowLinkStealing` defaults
+    false and the WebSocket factories never set it. So with a *shared* persisted clientId the
+    second tab is refused with CONNACK 0x02 and the first keeps running — tabs do not evict
+    each other in a loop, the later tab is simply dead. With a *per-tab* clientId the opposite
+    and worse thing happens: every tab ever closed leaves a durable subscription that is never
+    reaped and accretes forever toward the store limit that blocks all publishers. Both are
+    unacceptable; which one is live is intake item f. Second,
     tabs share one IndexedDB but hold independent connections, so one logical message can
     arrive twice into one shared store: Web Locks (crash-safe handoff, no lease or heartbeat,
     FIFO per resource) or BroadcastChannel? 0060 dismissed coordination on assumption A-13 and
@@ -494,10 +570,20 @@ standing gaps in `facts/app-profile.md` (the whole Contracts section; reconnect 
 which the session mode makes more consequential than it was). The four that now gate the
 survey rather than colour it:
 
+- **Who publishes to the 6 topics — MQTT clients, or JMS/OpenWire/STOMP/AMQP/Camel producers?**
+  (item b) — **the premise question, ahead of everything else.** ActiveMQ Classic inverts the
+  JMS-persistence-to-QoS mapping (AMQ-7045, open since 2018), so messages from a non-MQTT
+  producer reach the browser at QoS 0: no acknowledgement to defer, no durable subscription, no
+  offline retention. If the producers are JMS services — the normal case in a Classic shop —
+  this track's design is decorative for those topics and the report must say so rather than
+  specify a mechanism that cannot engage.
 - **Which topics get the durable path, and what share of the ~50 msg/s do they carry?** (item
-  b) — now the track's primary input rather than one of several. It is the selection rule that
-  goes on the policy row, it sets the rate every cost estimate is built on, and paired with
-  "are their effects idempotent?" it decides how much of the design is needed at all.
+  b) — the selection rule that goes on the policy row, the rate every cost estimate is built
+  on, and paired with "are their effects idempotent?" it decides how much of the design is
+  needed at all.
+- **The ActiveMQ version, the connector URI, and `offlineDurableSubscriberTimeout`** (item h) —
+  the first is a security floor, the second decides the multi-tab failure mode, and the third
+  is a prerequisite to shipping rather than a tuning question.
 - **Is the persisted clientId shared across tabs or per-tab?** (item f) — the two readings have
   opposite failure modes and one of them is a live defect independent of this track.
 - **Is there a stable per-message identifier in any payload today**, and can one be added?

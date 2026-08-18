@@ -119,17 +119,36 @@ Node version, package manager, the whole Contracts section, test framework, and 
   tight for a backgrounded browser tab, where Chromium throttles timers to ~60 s after five
   minutes hidden and WebSocket is not an exemption; whether that is causing background
   disconnect-resume cycles today is worth checking independently of this track.
-- Broker product and version: **unknown — now the highest-value missing fact.** "Undefined"
-  queue depth and in-flight window mean *defaults in force*, and the mainstream defaults invert
-  rather than merely differ: queue depth ~1000 everywhere except AWS IoT (unpublished);
-  in-flight 20 (Mosquitto, VerneMQ), 32 (EMQX), 50 (HiveMQ CE), 100 (AWS, fixed); session
-  expiry never (Mosquitto, VerneMQ, HiveMQ) versus 2 h (EMQX) and 1 h (AWS); overflow drops
-  **oldest** on EMQX and **newest** on the rest; and VerneMQ (20 s), NanoMQ (10 s) and AWS
-  (up to 1 h) retransmit unacknowledged QoS 1 to a still-connected client while Mosquitto and
-  EMQX 5 do not. Overflow is silent in every case — no protocol signal reaches the client — so
-  application-level gap detection is the only way to notice. **Still unanswered**: *which* 6
-  topics, whether their effects are idempotent, whether all 6 are QoS 1, payload size, and the
-  broker product — intake 2026-08-17-0150 items b and h.
+- Broker: **Apache ActiveMQ Classic** (2026-08-18, user; version not yet stated). A JMS broker
+  with an MQTT transport, not a native MQTT broker — so no native-broker default transfers, and
+  the earlier Mosquitto/EMQX/HiveMQ/VerneMQ/AWS comparison is superseded for this app. Source
+  read at tag `activemq-6.3.1`; findings put to an adversarial refuter, which overturned two.
+  **The premise-level finding**: `MQTTProtocolConverter` maps JMS persistence to MQTT QoS with
+  the ternary **inverted** (`isPersistent() ? AT_MOST_ONCE : AT_LEAST_ONCE`), on the path taken
+  whenever the `ActiveMQ.MQTT.QoS` property is absent — i.e. for every message from an
+  OpenWire/JMS, STOMP, AMQP or Camel producer. Such messages reach the browser at **QoS 0**:
+  no PUBACK, no durable subscription, no offline retention. This is **AMQ-7045**, open since
+  2018, unchanged in 6.3.1. Whether track 0150 is viable therefore depends on who publishes to
+  its 6 topics. Other consequences carried into that track: durable subscriptions exist only
+  for QoS ≥ 1, so **QoS-0 subscriptions are not restored on reconnect and `resubscribe: true`
+  is required** (this corrects an earlier note in 0060's annotation); the shipped
+  `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable subscribers,
+  giving the two tiers opposite loss semantics; durable prefetch is 100 per subscription, so
+  deferred acknowledgement does get real backpressure; there is **no in-connection
+  retransmission** and also **no poison-message cap or DLQ** on the MQTT path; `sessionPresent`
+  is hardcoded to 0 in every CONNACK; and MQTT 5 is actively rejected, permanently foreclosing
+  User Properties and Subscription Identifiers. **Two operations-owned ship-blockers**:
+  `offlineDurableSubscriberTimeout` defaults to -1 and the reaper `Timer` is never even
+  constructed, while `sendFailIfNoSpace` defaults false with no timeout — so abandoned durable
+  subscriptions accrete forever and a full store **blocks every publisher indefinitely**; and
+  every subscription is created `retroactive(true)`, so a new clientId inherits the undrained
+  backlog of every abandoned one (likely mechanism of **AMQ-9592**, open — a confidentiality
+  concern if topics are user-scoped). Over WSS, `allowLinkStealing` defaults false and the
+  WebSocket factories never set it, so a duplicate clientId is **rejected** (CONNACK 0x02)
+  rather than stealing the link. **Still unanswered**: the producer technology on the 6 topics,
+  *which* 6 topics, whether their effects are idempotent, payload size, the ActiveMQ version
+  (CVE floor 6.2.4+ / 5.19.2+ — a `wss://` connector is exposed despite the advisory wording),
+  and the connector URI — intake 2026-08-17-0150 items b and h.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
