@@ -48,20 +48,33 @@ refused per-row `dedupeKey` overrides said a second dedup policy should arrive a
 addition, not an interface redesign". A durability flag on the policy row is exactly that, and
 it should not require reshaping any interface.
 
-**But selectivity buys frequency, not isolation, and the plan must not confuse the two.**
-`handleMessage` is a single client-wide hook, serialized one message at a time across *every*
-topic. So a durable write performed inside it to defer one topic's acknowledgement blocks the
-pump for all topics — the non-durable 
-majority included — and starves the connection's keepalive while it runs. Per-topic policy
-reduces how *often* the slow path executes; it does nothing to reduce its blast radius when it
-does. Any design that reads "only these topics pay the cost" is wrong on the ack path unless it
-also isolates the pump.
+**Selectivity buys frequency, not isolation.** `handleMessage` is a single client-wide hook,
+serialized one message at a time across *every* topic, so a durable write performed inside it
+to defer one topic's acknowledgement blocks the pump for all topics — the non-durable majority
+included. Per-topic policy reduces how *often* the slow path executes, not its blast radius
+when it does. The same is true of 0060's delivery queue, which is shared and sheds oldest.
 
-Two consequences follow, and they pull in opposite directions. The cost question gets easier:
-the durable path's message rate is a fraction of the ~50/s aggregate, retention and quota
-shrink with it, and the case for a thin wrapper over a heavyweight engine strengthens. The
-correctness question gets harder: head-of-line blocking is now a first-class design problem
-rather than a throughput footnote, and the report owes an answer to it.
+**With the rate known, that blast radius is small.** The durable path's ceiling is **~5 msg/s
+across 6 of roughly 40 topics** (user, 2026-08-18), against a ~50 msg/s aggregate. Five per
+second is a 200 ms serialized budget per message. The only measured baseline in hand — 1,000
+single-record transactions at 630.7 ms under relaxed durability, Chrome 92 — puts a
+single-store commit at ~0.63 ms; a two-store commit with a real payload is plausibly 1.5–3 ms,
+and 10–20 ms is a pessimistic allowance for main-thread contention. That is a **0.8% duty cycle
+nominally and 10% pessimistically**, with the worst added latency for a non-durable message
+queued behind one durable commit equal to a single transaction — 20 ms in the pessimistic case.
+
+So head-of-line blocking is a bounded, measurable cost here, not a design blocker. **This
+corrects the previous framing in this plan, which called it a first-class problem before the
+rate was known** — that emphasis was wrong, and it changes which option leads in question 2.
+Two orders of magnitude of headroom nominally, one pessimistically, means per-message deferral
+is likely to fit without batching, and the report should treat *that* as the hypothesis to
+disprove rather than reaching for a batching scheme first. The arithmetic above is a bound
+computed from a third-party benchmark on a different engine version, not a measurement of this
+application; the report measures before it commits.
+
+What does **not** shrink with selectivity is the reconnect replay burst (question 5), which is
+sized by the broker's session-expiry interval rather than by how many topics are durable, and
+which is currently the sharpest unresolved risk in this plan.
 
 ## Key questions
 
@@ -79,26 +92,31 @@ rather than a throughput footnote, and the report owes an answer to it.
    callback, and 0060 Key question 5 requires the opposite — "never do slow work in
    `handleMessage`" — because the handler is serialized one-at-a-time and slow work starves
    the keepalive ([#1935](https://github.com/mqttjs/MQTT.js/issues/1935)), and because
-   mqtt.js's README warns the client hangs if the callback is never called. The report weighs
-   at least these, and says which it recommends and what each forfeits:
-   - **Defer only for durable topics**, accepting head-of-line blocking of every other topic
-     for the duration of each durable commit. Cheapest to build; the cost is borne by traffic
-     that opted out.
-   - **Never block; write durably after the ack.** Preserves the pump exactly as accepted, and
+   mqtt.js's README warns the client hangs if the callback is never called. At the stated
+   ~5 msg/s the collision is much less severe than it looks — see the duty-cycle bound above —
+   so the options are no longer evenly matched. The report tests them in this order:
+   - **Defer per message: one transaction per message, no batching.** *The leading candidate
+     and the hypothesis to disprove.* Simplest possible semantics — atomicity at one-message
+     granularity, no batch window to tune, no interaction with the broker's in-flight limit —
+     and the arithmetic says it fits with an order of magnitude of headroom even
+     pessimistically. It must be measured rather than assumed, and the measurement has to
+     include what queues behind it, not just the commit itself.
+   - **Never block; write durably after the ack.** Preserves the pump exactly as accepted and
      gives up on closing the loss window — the inbox then deduplicates but does not prevent
-     loss. A legitimate answer if question 1 ranks (a) above (b), but it must be stated as a
-     choice rather than arrived at silently.
-   - **Batch commits and release acks together.** Amortizes the transaction cost, which is the
-     dominant cost, at the price of bounded added latency. Note the ceiling this runs into:
-     held acknowledgements consume the broker's in-flight window (MQTT 5 `Receive Maximum`; on
-     3.1.1 a broker-side max-inflight setting), so the broker throttles once it fills. That is
-     correct backpressure rather than a bug, but it hard-caps the batch window and the report
-     must size it against the configured limit.
-   - **A second connection for durable topics**, isolating the pump structurally. Note this
-     runs against 0070 A-6's "a **single** client connection (multiple connections would void
-     the per-topic ordering baseline)", and under `clean: false` it needs a second clientId and
-     a second persistent session on the broker. Named for completeness; the burden of proof is
-     against it.
+     loss. The fallback if measurement kills the option above, and a legitimate answer if
+     question 1 ranks (a) above (b); either way it must be a stated choice, not an outcome
+     arrived at silently.
+   - **Batch commits and release acks together.** Now an *optimization*, not a necessity, and
+     it buys little at this rate against real cost: held acknowledgements consume the broker's
+     in-flight window (MQTT 5 `Receive Maximum`; on 3.1.1 a broker-side max-inflight setting,
+     Mosquitto's default 20), so the broker throttles once it fills and the batch window is
+     hard-capped by a number nobody has yet. Reach for it only if per-message deferral measures
+     badly.
+   - **A second connection for durable topics.** Structural isolation, at the price of running
+     against 0070 A-6's "a **single** client connection (multiple connections would void the
+     per-topic ordering baseline)" and, under `clean: false`, a second clientId and a second
+     persistent session. Recorded as considered and **not** recommended: it buys isolation the
+     duty-cycle bound says is not needed.
 
    Protocol-version constraint on the seam itself: `manualAcks` does not exist in mqtt.js and
    `customHandleAcks` is silently a no-op below protocol version 5 — overriding `handleMessage`
@@ -122,15 +140,20 @@ rather than a throughput footnote, and the report owes an answer to it.
    content-hash key silently swallows both. Also settled here: QoS 0 has no redelivery
    identity at all — measured in the 0060 spike (`check-2::cannot dedup QoS-0 packets`) — and
    is not queued by the broker, so the report says whether QoS 0 is in scope.
-5. **Does the reconnect replay burst survive the accepted bounded queue?** A persistent
-   session's backlog arrives at once on reconnect. 0060's delivery queue is count-bounded
-   (default 256) and sheds *oldest* on overflow with a class-1 `queue-overflow` event, so at
-   ~50 msg/s a disconnection of a minute can shed exactly the messages the persistent session
-   was preserving — a durable inbox behind a lossy queue protects nothing. The queue is shared
-   across all topics, so a burst on non-durable topics can evict durable ones: another case
-   where per-topic policy does not buy per-topic isolation. The report sizes this and says what
-   changes — the bound, the shedding policy (oldest-first is wrong if some rows are durable),
-   the ack pacing, or nothing.
+5. **Does the reconnect replay burst survive the accepted bounded queue? — the sharpest
+   unresolved risk in this plan.** A persistent session's backlog arrives at once on reconnect,
+   and its size is set by the broker's session-expiry interval, not by how few topics are
+   durable — so unlike every other cost here, selectivity does not shrink it. On the durable
+   topics alone, at their 5 msg/s ceiling: an hour offline queues ~18,000 messages against
+   0060's delivery-queue bound of **256**, a seventyfold overshoot, and the queue sheds
+   *oldest* on overflow — precisely the messages the persistent session existed to preserve.
+   Add the non-durable QoS 1 topics and the burst is larger still, since the queue is shared.
+   A durable inbox behind a lossy queue protects nothing, so this must be answered before the
+   design is worth building. The report needs the broker's session-expiry interval and
+   per-session queue depth (intake item h) to size it, then says what changes: the bound, the
+   shedding policy (oldest-first is indefensible once some rows are durable), the ack pacing
+   that throttles intake to what can be committed, or a deliberate decision to accept loss on
+   long disconnections and say so out loud.
 6. **Atomicity or durability — which guarantee is actually being bought?** These are not the
    same purchase on the stated browser matrix. IndexedDB *does* give all-or-nothing commit
    across object stores on both engines. It does *not* give a flush guarantee: Firefox has
@@ -184,11 +207,19 @@ rather than a throughput footnote, and the report owes an answer to it.
     flagged it as reopening if tabs share a connection; durable storage is cross-tab by
     construction, so this track reopens it regardless. Note both an open IndexedDB connection
     and a held Web Lock forfeit back/forward-cache eligibility.
-12. **Retention, compaction, reset, and poison recovery.** How far back must a duplicate be
-    recognised, and what prunes the store? Persistence removes "reload fixes it" as an escape
-    hatch permanently, so the report specifies what clears the inbox, who can trigger it, how a
-    corrupt store is *detected*, and what the app does meanwhile. Storage eviction is
-    whole-origin and LRU by default; `navigator.storage.persist()` prompts the user in Firefox.
+12. **Retention, compaction, reset, and poison recovery.** The retention window looks
+    **derivable rather than chosen**, and the report should test that: under a persistent
+    session the broker will never redeliver a message older than its **session-expiry
+    interval**, so a key older than that is dead weight and expiry-plus-margin is the natural
+    window. That makes the sizing comfortable — at 5 msg/s, keys alone run about 1.2 MB per
+    hour of expiry, so even a 24-hour window is ~28 MB, well inside quota. Storing payloads
+    rather than keys alone changes this by whatever the payload size is, which is the number to
+    get. What still needs deciding: what actually runs the pruning and when (a sweep on
+    startup, a rolling delete, an index range), and the recovery half — persistence removes
+    "reload fixes it" as an escape hatch permanently, so the report specifies what clears the
+    inbox, who can trigger it, how a corrupt store is *detected*, and what the app does
+    meanwhile. Storage eviction is whole-origin and LRU by default; `navigator.storage.persist()`
+    prompts the user in Firefox.
 13. **Which way is the design biased, and how is "working" distinguished from "never firing"?**
     The failure modes are asymmetric. A false negative reproduces today's behaviour. A false
     positive silently drops real work, raises no error, and now survives the reload that used

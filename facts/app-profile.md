@@ -87,9 +87,21 @@ Node version, package manager, the whole Contracts section, test framework, and 
   of the ~50 msg/s, not the aggregate — and it correspondingly shrinks retention and quota.
   It does **not** buy isolation: `handleMessage` is one client-wide serialized hook and 0060's
   delivery queue is shared, so a durable write blocks every other topic while it runs and a
-  burst on non-durable topics can shed durable ones. **Still unanswered**: which topics, and
-  what share of traffic they carry — intake 2026-08-17-0150 item b, now that track's primary
-  input.
+  burst on non-durable topics can shed durable ones.
+- Durable-ingest volume: **~6 of roughly 40 topics, ceiling ~5 msg/s** (2026-08-18, user) —
+  against the ~50 msg/s aggregate, so the durable path is about a tenth of traffic. Three
+  consequences, computed rather than assumed. (1) Five per second is a 200 ms serialized budget
+  per message, so per-message acknowledgement deferral runs at roughly a **0.8% duty cycle
+  nominally and 10% pessimistically**, and head-of-line blocking of the other 34 topics is a
+  bounded cost rather than a blocker — batching is an optimization here, not a necessity.
+  (2) Dedup-key retention is **derivable from the broker's session-expiry interval** (the
+  broker never redelivers beyond it), and sizes at roughly 1.2 MB of keys per hour of expiry —
+  comfortable at any plausible setting. (3) The reconnect replay burst does **not** shrink with
+  this: it is sized by session expiry, so an hour offline queues ~18,000 durable-topic messages
+  against 0060's delivery-queue bound of 256. That interaction is the sharpest open risk in
+  track 0150. **Still unanswered**: *which* 6 topics, whether their effects are idempotent, and
+  the broker's session-expiry, queue-depth and in-flight settings — intake 2026-08-17-0150
+  items b and h.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
