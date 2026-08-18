@@ -158,9 +158,32 @@ Node version, package manager, the whole Contracts section, test framework, and 
   and re-triggering retained delivery. 0060's boundary caps reconnection at `maxAttempts`
   (default 10) with exponential backoff before declaring `degraded`, so the **predicted
   observable symptom is both tabs going `degraded` and silently stopping**, not indefinite
-  flapping. Whether this is live depends on the still-open question of whether the persisted
-  clientId is shared across tabs or per-tab (intake 2026-08-17-0150 item f). If shared, it is a
-  production defect independent of track 0150, and the prediction above is falsifiable today.
+  flapping. This turned out **not** to be live — tabs never share a clientId, so the prediction
+  is falsified. Left in place as the record; see the next entry for the branch that is live.
+- clientId scope: **unique per browser tab** (2026-08-18, user). This is the **worse** of the
+  two branches and a live production liability independent of track 0150. Each tab mints **6
+  durable JMS subscriptions** that nothing removes (`offlineDurableSubscriberTimeout` defaults
+  `-1`, and the reaper `Timer` is never constructed). Verified in `apache/activemq` source:
+  KahaDB removes a topic message's index entries only when *no* durable subscription still
+  references its sequence, and a journal file is GC'd only when nothing points into it — so one
+  never-acking orphan pins every data file written since it was created. **The pinning is not
+  confined to these 6 topics**: journal files are shared by all destinations and GC is
+  all-or-nothing per file, so retained bytes track the broker's *total* persistent write volume.
+  There is also no quiet period — `Topic.canOptimizeOutPersistence()` is
+  `durableSubscribers.size() == 0`, so once one tab has connected the topics keep consuming disk
+  with zero tabs open. Orphan count additionally drives heap, since `keepDurableSubsActive`
+  defaults true and each offline subscription keeps an in-memory cursor. Endgame: `storeUsage`
+  is broker-wide, and at its high water mark persistent producers call `waitForSpace()` and
+  block **indefinitely** — every publisher, not just these topics. The MQTT specification warns
+  against exactly this pattern (§3.1.3.1 non-normative: random clientIds "should be actively
+  discouraged when the CleanSession is set to 0"), and ActiveMQ's own "Manage durable
+  subscribers" page names the failure mode. Diagnosis note: **do not rank offenders by pending
+  count** — `getPendingQueueSize()` returns 0 for inactive subscriptions (an unresolved
+  `// TODO: need to get from store`), so JMX and the web console both read zero for exactly the
+  orphans being hunted; use the length of `BrokerViewMBean.getInactiveDurableTopicSubscribers()`,
+  per-topic `getStoreMessageSize()`, and the KahaDB `db-*.log` file count. The cleanest remedy,
+  `clean: true` per tab, removes the liability but also removes cross-reload redelivery — which
+  is what made track 0150 live; that tension is written up in the track's plan.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
