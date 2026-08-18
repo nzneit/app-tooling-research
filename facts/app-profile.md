@@ -62,6 +62,23 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - QoS levels used: 1 and 0
 - Topic-scheme shape (redacted example ok): varies a bit by use case
 - Rough peak message rate (msgs/sec): ~50 per second
+- Session mode: **`clean: false` with a persisted clientId** (2026-08-17, user) — a
+  **persistent** session, not mqtt.js's default. This **falsifies 0060 assumption A-5 and
+  0070 assumption A-6**, both of which declared `clean: true`; each accepted report now
+  carries a dated in-place correction, and the 0060 spike's `design.md` hard-codes
+  `readonly clean: true` as a fixed config value. Four consequences carry into every
+  affected recommendation. (1) The broker **retains session state and queues QoS 1 messages
+  while the client is disconnected**, redelivering them on reconnect — so cross-reload
+  redelivery is real, which is what makes track 0150 live rather than a skip. (2) The
+  mqtt.js duplicate-delivery history that A-5 declared out of scope
+  ([#909](https://github.com/mqttjs/MQTT.js/issues/909)) is **in** scope. (3) A reconnect is
+  no longer automatically a gap for QoS 1 streams, so 0070's "every reconnect is a gap" rule
+  is now over-conservative there (safe, but paying invalidation round-trips it may not owe);
+  it still holds for QoS 0, which is not queued. (4) `resubscribe: true` is redundant against
+  a retained session and re-triggers retained-message delivery on every reconnect. **Still
+  unanswered and consequential**: whether the persisted clientId is shared across tabs or is
+  per-tab — see intake 2026-08-17-0150 item f. The two readings have opposite failure modes
+  and one of them is a live defect independent of any inbox.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
