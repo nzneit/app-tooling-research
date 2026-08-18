@@ -173,10 +173,20 @@ Node version, package manager, the whole Contracts section, test framework, and 
   AMQ-5856 makes the flag inert over MQTT-on-WebSocket anyway. If reconnect latency is the real
   concern the lever is **keepalive** — 30 s sets the 45 s floor on both sides — traded against
   the background-tab throttling hazard recorded above.
-- clientId scope: **device-scoped, with a single connection using it at a time** (2026-08-18,
-  user, clarifying an earlier statement this repo first read as per-tab minting — that reading
-  was wrong and the entry below is corrected in place). One device means one clientId, one set of
-  6 durable subscriptions, reused across tabs and reloads. Three consequences. **(1) The orphan
+- clientId scope: **device-scoped and a static roster** — multiple clients, a fixed number of
+  them, each with a unique persistent clientId, one connection using it at a time (2026-08-18,
+  user, across two clarifications; an earlier statement was first read here as per-tab minting,
+  which was wrong, and the entry below is corrected in place). One client means one clientId and
+  one set of 6 durable subscriptions, reused across tabs and reloads, with the total count fixed
+  by the roster. This is the most favourable shape available: in steady state **nothing new is
+  orphaned**, and exposure concentrates at provisioning and decommissioning rather than in normal
+  use. Two residual cases remain, and one orphan is sufficient for either to matter — a client
+  retired or reimaged without unsubscribing, and a client offline far longer than expected.
+  Consequently `offlineDurableSubscriberTimeout` is **no longer the recommended fix**: it would
+  silently delete a legitimately-absent client's queued backlog, which is the guarantee this work
+  exists to provide, and on a fixed roster a decommissioning procedure targets the real failure
+  instead. Storage also becomes computable: roster size × longest expected offline window ×
+  message rate. Three further consequences. **(1) The orphan
   liability shrinks by orders of magnitude but does not disappear**, and it is important that the
   mechanism is unchanged: because one never-acking durable subscriber is sufficient to pin every
   journal file written since it was created, a single decommissioned laptop, cleared profile, or

@@ -171,12 +171,19 @@ built two sections on that reading; **that was a misreading and this section is 
 One device means one clientId, one set of 6 durable subscriptions, reused across tabs and
 reloads — so orphans accrue per departed *device*, not per tab opened.
 
-**The rate drops by orders of magnitude. The severity of a single orphan does not**, and that is
-the part not to lose: one never-acking durable subscriber is sufficient to pin every journal file
-written since it was created, so one decommissioned laptop, cleared browser profile, or departed
-user still produces unbounded growth. A device that comes back drains its backlog and releases
-the pin; a device that never returns never does. Every mechanism below still holds — only the
-arrival rate of new orphans changes.
+**Refined again 2026-08-18: the roster is static** — multiple clients, a fixed number of them,
+each with a unique persistent clientId. That is the most favourable shape available, and it
+changes the liability from *unbounded accrual* to a *bounded set plus a hygiene problem*. In
+steady state nothing new is orphaned: N clients hold N × 6 durable subscriptions, that number does
+not grow, and a client that goes offline and returns drains its backlog and releases its pin.
+
+**Two residual cases, and only two.** First, **roster change**: a client that is retired,
+replaced, or reimaged without unsubscribing leaves a permanent orphan, and one is sufficient —
+a single never-acking subscriber pins every journal file written since, across all destinations.
+Second, **a client that stays offline far longer than expected**, which pins the store for the
+duration without ever being wrong to do so. Every mechanism described below still holds; what has
+changed is that the arrival rate of new orphans is now approximately zero, and the exposure is
+concentrated at provisioning and decommissioning events rather than spread across normal use.
 
 Each device that has ever connected holds **6 durable JMS subscriptions** that nothing removes:
 `offlineDurableSubscriberTimeout` defaults to `-1` and the reaper `Timer` is never constructed.
@@ -236,13 +243,35 @@ What remains true regardless of that choice: **`clean: true` reclaims nothing al
 clientId connecting at that moment, so it never touches orphans left by devices that are gone.
 The existing backlog comes back only via `offlineDurableSubscriberTimeout` or a JMX sweep.
 
-So remediation is now **one broker-side change, not an application redesign**: set
-`offlineDurableSubscriberTimeout` to a finite value, sized so that a device legitimately offline
-for a weekend is not reaped. Note the client-side condition that carries with it — a device whose
-subscriptions *were* reaped reconnects successfully and then receives nothing, silently, because
-ActiveMQ hardcodes `sessionPresent = 0` and cannot tell it. The app must therefore re-SUBSCRIBE
-unconditionally on every connect, which it must do anyway for the QoS-0 topics ActiveMQ never
-restores.
+**And with a static roster, `offlineDurableSubscriberTimeout` stops being the obvious answer.**
+It reaps any subscription offline longer than the threshold — and a reaped client reconnects
+successfully, then receives **nothing**, silently, because ActiveMQ hardcodes `sessionPresent = 0`
+and cannot tell it. It also loses everything queued during its absence, which is precisely the
+guarantee this track exists to provide. So a timeout is safe only if it comfortably exceeds the
+longest *legitimate* absence, and on a fixed roster that number is knowable — shift patterns,
+overnight shutdowns, holiday closures. If any client can be legitimately offline for an unbounded
+period (a spare unit in storage, a seasonal installation), **no safe timeout exists** and the
+timeout is the wrong tool.
+
+The better fit for a static roster is a **decommissioning procedure**: when a client is retired
+or reimaged, explicitly remove its durable subscriptions — an MQTT UNSUBSCRIBE, a single
+`clean: true` connect under that clientId, or `BrokerView.destroyDurableSubscriber(clientId,
+subscriptionName)` over JMX. That targets the actual failure (roster change) instead of
+approximating it with a timer, and it cannot silently delete a live client's backlog. The report
+should recommend both a procedure and a monitor — the length of
+`getInactiveDurableTopicSubscribers()` should equal the number of currently-offline roster
+members, and any excess is an orphan.
+
+Either way the app must **re-SUBSCRIBE unconditionally on every connect**, which it needs to do
+regardless for the QoS-0 topics ActiveMQ never restores.
+
+**One event on a static roster deserves its own answer: provisioning a new client.** Every
+subscription is created `retroactive(true)`, so a newly-minted clientId's starting position is
+the union of sequences still outstanding for every other durable subscriber on those topics —
+meaning a replacement unit would receive the undrained backlog of the whole fleet as one burst,
+into the deferred-PUBACK path, bounded by disk rather than by 5 msg/s. This is a source-level
+inference flagged as needing empirical confirmation, and it is exactly the kind of claim a spike
+should test rather than a report assert. If it holds, provisioning needs a defined procedure too.
 
 ### What this restores for the track
 
