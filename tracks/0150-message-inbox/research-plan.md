@@ -242,6 +242,28 @@ the `retroactive(true)` provisioning question below.
   retention** — is cheap in the client and runs straight into the identity trap below: the
   stranded `1:<topic>` durable subscription outlives the demotion and pins the journal forever.
   Audit and decommissioning are one procedure, not two.
+
+**Sized 2026-08-18: roughly 75% of the other ~34 are QoS 1** (user). The arithmetic below assumes
+message rate tracks topic count, which is a guess and is the first thing the survey should
+replace with a measurement — but the order of magnitude is what matters and it is not close.
+
+| | topics | rate | durable subs per device |
+|---|---|---|---|
+| inbox path (intended) | ~6 | ~5 msg/s | 6 |
+| incidental durable | ~26 | ~34 msg/s | ~26 |
+| QoS 0 (genuinely non-durable) | ~8 | ~11 msg/s | 0 |
+| **total durable** | **~32** | **~39 msg/s** | **~32** |
+
+**The unintended durable path is about eight times the intended one**, on every axis. Three
+figures in this plan are superseded by that: per-device durable subscriptions go from 6 to ~32;
+outstanding prefetch goes from 6 × 100 = 600 to ~32 × 100 = **~3,200** per device, which is much
+closer to the ~32k figure this plan congratulated itself on avoiding; and offline accrual runs at
+~39 msg/s rather than 5, so **one hour offline is ~140,000 messages per device**, not ~18,000.
+On reconnect roughly an eighth of those — the inbox topics' share, ~18,000 per offline hour —
+need an IndexedDB commit before their acknowledgement can be released, which at 3 ms/commit is
+about a minute of paced drain per hour offline, and at 20 ms is closer to six. Bounded and
+survivable, but it is a drain measured in minutes rather than the ~3 s the 1000-message figure
+suggested.
 - **Deferral gets real backpressure, and is safe from retransmission.** Durable MQTT
   subscriptions take `DEFAULT_DURABLE_TOPIC_PREFETCH` = **100**, per subscription — so at most
   6×100 = 600 outstanding, not the feared ~32k (which applies only to QoS-0/clean-session
@@ -513,6 +535,76 @@ unavailable, not as the leading option.
   advisory wording "not enabling mqtt transport connectors are not impacted" does not exempt
   this deployment. Establish the running version.
 
+## The broker may not stay ActiveMQ, which demotes most of the section above
+
+**There is a decent chance of a swap to Eclipse Mosquitto** (user, 2026-08-18). That is not a
+footnote on the ActiveMQ findings — it is a statement about their **shelf life**, and it should
+change how this plan is written rather than being appended to it. Nearly everything above is
+ActiveMQ implementation behaviour, not MQTT semantics: AMQ-7045 and the inverted persistence
+ternary, `(clientId, "<QoS>:<topic>")` subscription keying, `offlineDurableSubscriberTimeout` and
+its never-constructed reaper, `retroactive(true)`, prefetch 100 per subscription,
+`constantPendingMessageLimitStrategy`, hardcoded `sessionPresent = 0`,
+`canOptimizeOutPersistence()`, AMQ-9592. **None of it survives the swap.** Several findings do not
+merely lapse, they *invert*.
+
+**The retention arithmetic inverts hardest, and it is the number that should drive the decision.**
+Mosquitto's `max_queued_messages` defaults to **1000 per client** and drops **newest** when full
+(measured in the broker-defaults table, intake item h). ActiveMQ's durable subscriptions never
+drop — they accumulate against disk without limit. So the *same application configuration* gives:
+
+| | offline retention at ~39 msg/s | after a demotion audit, ~5 msg/s |
+|---|---|---|
+| ActiveMQ Classic | unbounded (bounded by disk; blocks publishers when full) | unbounded |
+| Mosquitto (defaults) | **~26 seconds** | **~3 minutes** |
+
+Read that second row twice. On Mosquitto defaults, the guarantee this track exists to provide —
+"messages that arrived while the tab was closed are still there" — **covers about half a minute**,
+and even a perfect demotion audit only buys three. Covering a single overnight absence at 5 msg/s
+needs ~144,000 queued messages, a `max_queued_messages` two orders of magnitude above default.
+That is a broker configuration change without which the design does not function, and it is
+invisible from the client. Worse, Mosquitto drops **newest**: a client past its cap reconnects to
+a stale prefix and silently misses the recent tail, which for most app semantics is the wrong end
+to keep.
+
+**The backpressure story inverts the other way, in our favour.** Mosquitto's in-flight window is
+**20** against ActiveMQ's ~3,200 outstanding across 32 durable subscriptions. Deferred
+acknowledgement stops the broker after 20 unacked messages — tight, safe, exactly the
+backpressure that makes deferral sound. **So ActiveMQ gives generous retention with dangerous
+backpressure, and Mosquitto gives safe backpressure with thin retention.** Both need
+configuration work, in opposite directions, and neither is the default.
+
+**Four more flips worth naming, because a design that assumes either broker breaks silently on
+the other:**
+
+- **`sessionPresent` becomes usable.** Mosquitto sets it per spec; ActiveMQ hardcodes 0. Recovery
+  logic that reads it works on one and silently mis-recovers on the other.
+- **`resubscribe: true` becomes redundant again.** Mosquitto restores all subscriptions on a
+  `clean: false` reconnect per §3.1.2.4, including QoS 0. **This plan corrected 0060's annotation
+  once already** — "redundant" → "required" — and the correction is *ActiveMQ-conditional*. It is
+  right today and wrong after a swap. 0060's annotation should say which broker it assumes.
+- **The QoS-identity trap disappears.** Mosquitto does not key subscriptions by QoS, so a
+  demotion does not strand anything. The demotion audit is *safe* on Mosquitto and *hazardous*
+  on ActiveMQ — the same remedy, opposite risk profiles.
+- **A producer dropping MQTT stops being silent.** There is no JMS side to fall back to, so it
+  cannot publish at all: a loud failure instead of question 18's invisible degradation. The
+  guard stays worth having — it is nearly free, and it is the only thing that catches the
+  ActiveMQ case — but its urgency is broker-dependent.
+
+**The design rule this imposes.** Express the design against **MQTT 3.1.1 semantics**, keep
+broker behaviour in a compatibility matrix rather than in design assumptions, and detect at
+runtime what the protocol does not guarantee. Guarantee A — effect and identity commit in one
+IndexedDB transaction — is broker-independent by construction and survives every swap untouched,
+which makes the A/B split above load-bearing rather than tidy. Guarantee B is a broker
+configuration property that must be *asserted*, not assumed.
+
+**Two mechanisms carry that weight, and both are broker-agnostic.** Question 18's delivered-QoS
+comparison, and **application-level sequence-gap detection** — which is the only thing that
+catches Mosquitto's silent newest-drop, ActiveMQ's cap-discard, *and* a producer migration, with
+one mechanism, on a protocol version that offers nothing itself. That raises the value of
+**D-0019's requested monotonic ordering stamp**, which was justified by the REST-vs-MQTT race and
+now has a second, independent justification: a per-topic sequence is exactly what gap detection
+consumes. The report should say so to the contract owners.
+
 ## Key questions
 
 1. **What is the inbox for?** Four goals are routinely conflated and want different stores,
@@ -760,6 +852,28 @@ unavailable, not as the leading option.
     - **Is the inverse worth checking?** Delivered QoS 1 on a row not declared durable means a
       topic gained a guarantee nobody planned to use — cheap to detect on the same comparison,
       and it is how a *new* durable-path candidate announces itself.
+19. **Which of this design's guarantees survive a broker swap, and which are configuration?**
+    Added 2026-08-18, from the possible move to Mosquitto. This is a question about the *report's*
+    structure as much as the design's: a recommendation that reads as "this works" when it means
+    "this works on ActiveMQ 6.3.1 with these three settings" is a defect, and this plan has
+    already written several such sentences. The report should carry a short **compatibility
+    matrix** — retention limit and drop policy, in-flight window, `sessionPresent` fidelity,
+    subscription restoration on `clean: false` reconnect, subscription identity, offline-session
+    expiry — across at minimum ActiveMQ Classic and Mosquitto, since those are the two live
+    candidates, and state for each design element whether it is protocol-guaranteed,
+    broker-guaranteed, or configuration. Two specific outputs are worth more than the matrix:
+    - **The minimum broker configuration the design requires, per broker, as a checklist an
+      operator can act on.** On Mosquitto that is dominated by `max_queued_messages`, which must
+      rise roughly two orders of magnitude above default or the offline guarantee covers minutes.
+      This is the deliverable most likely to be missing when the design is judged to have failed
+      in production.
+    - **Whether any design element requires a broker feature neither candidate guarantees**, in
+      which case it is not a design element but a wish.
+
+    Note the interaction with question 5: the reconnect replay burst is sized by the broker's
+    queue depth, and the two candidates differ by orders of magnitude in both directions —
+    unbounded on one, 1000 on the other. A burst design tuned to either is wrong on the other,
+    so the burst handling must be driven by observed backlog rather than a configured expectation.
 
 ## Seams this track cites rather than restates
 

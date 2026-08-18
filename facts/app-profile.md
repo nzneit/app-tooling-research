@@ -155,8 +155,25 @@ Node version, package manager, the whole Contracts section, test framework, and 
   `constantPendingMessageLimitStrategy limit="1000"` ceiling that bounds QoS-0 subscribers, and
   never reaped — without the app having asked for any of it, and without an inbox to deduplicate
   their reconnect replay. Per-device durable-subscription count is **N × (6 + that unknown
-  number)**, so every 6-based sizing figure is a floor. How many, and whether any of them need
-  offline retention at all, is intake 2026-08-17-0150 item b.
+  number)**, so every 6-based sizing figure is a floor. **Sized the same day: roughly 75% of the
+  other ~34 are QoS 1** — about 26 incidental durable subscriptions on top of the 6 intended, so
+  ~32 per device carrying ~39 msg/s if rate tracks topic count. The unintended durable path is
+  roughly **eight times** the intended one. *Which* of them need offline retention at all is
+  intake 2026-08-17-0150 item b, and it is the input a demotion audit needs.
+- **The broker may not stay ActiveMQ Classic** (2026-08-18, user): a decent chance of swapping to
+  **Eclipse Mosquitto**. Every ActiveMQ-specific finding above is therefore time-limited, and
+  several *invert* rather than lapse. The decisive one is retention: ActiveMQ durable
+  subscriptions never drop, while Mosquitto defaults to `max_queued_messages` **1000 per client,
+  dropping newest** — about **26 seconds** of offline backlog at ~39 msg/s, or ~3 minutes even
+  after a demotion audit, against ActiveMQ's unbounded. Covering an overnight absence on
+  Mosquitto needs roughly 144,000, two orders of magnitude above default. In the other direction
+  Mosquitto's 20-message in-flight window is far safer for deferred acknowledgement than
+  ActiveMQ's ~3,200 outstanding. Also flipping on a swap: `sessionPresent` becomes usable
+  (Mosquitto sets it per spec), `resubscribe: true` becomes redundant again (Mosquitto restores
+  QoS-0 subscriptions per §3.1.2.4 — **so the correction this program made to 0060's annotation
+  is ActiveMQ-conditional**), subscriptions are not keyed by QoS so demotion strands nothing, and
+  a producer dropping MQTT fails loudly rather than silently. 0150 question 19 owns the
+  compatibility matrix and the per-broker minimum-configuration checklist.
   Other consequences carried into 0150: durable subscriptions exist only
   for QoS ≥ 1, so **QoS-0 subscriptions are not restored on reconnect and `resubscribe: true`
   is required** (this corrects an earlier note in 0060's annotation); the shipped
