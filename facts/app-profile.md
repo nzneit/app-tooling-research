@@ -98,10 +98,38 @@ Node version, package manager, the whole Contracts section, test framework, and 
   broker never redelivers beyond it), and sizes at roughly 1.2 MB of keys per hour of expiry —
   comfortable at any plausible setting. (3) The reconnect replay burst does **not** shrink with
   this: it is sized by session expiry, so an hour offline queues ~18,000 durable-topic messages
-  against 0060's delivery-queue bound of 256. That interaction is the sharpest open risk in
-  track 0150. **Still unanswered**: *which* 6 topics, whether their effects are idempotent, and
-  the broker's session-expiry, queue-depth and in-flight settings — intake 2026-08-17-0150
-  items b and h.
+  against 0060's delivery-queue bound of 256.
+  > **2026-08-18 revision.** Consequence (2) is withdrawn and consequence (3) is materially
+  > reduced; the protocol version and the broker defaults below supersede both. Retention is
+  > **not** derivable (3.1.1 has no session expiry), and the replay burst is capped at the
+  > broker (~1000, not 18,000) and paced by the in-flight window once acks are deferred.
+- Protocol version: **MQTT 3.1.1 (protocolVersion 4)**, no session-expiry interval
+  (2026-08-18, user). Keepalive **30 s**. Four consequences, spec-verified. `handleMessage` is
+  the only acknowledgement seam (`customHandleAcks` is a no-op below v5, `manualAcks` does not
+  exist). There are **no User Properties or Correlation Data**, so a producer-supplied
+  idempotency key has to go inside the payload — a vendored-schema change, with no cheaper
+  variant. There are **no Subscription Identifiers**, so copies of one publish delivered for
+  two overlapping filters are indistinguishable and a content hash cannot separate them.
+  And 3.1.1 has **no session-expiry concept at all** — the spec bounds session lifetime only
+  from below and leaves the upper bound to "administrative policies" — so how long a persistent
+  session survives is broker configuration, not protocol. Note also that **[MQTT-4.6.0-2]
+  requires PUBACKs to be sent in the order the PUBLISHes were received**, which constrains any
+  per-topic acknowledgement deferral to a single receipt-ordered release queue. Keepalive 30 s
+  gives a 45 s server deadline (1.5×) — vast headroom against a millisecond-scale commit, but
+  tight for a backgrounded browser tab, where Chromium throttles timers to ~60 s after five
+  minutes hidden and WebSocket is not an exemption; whether that is causing background
+  disconnect-resume cycles today is worth checking independently of this track.
+- Broker product and version: **unknown — now the highest-value missing fact.** "Undefined"
+  queue depth and in-flight window mean *defaults in force*, and the mainstream defaults invert
+  rather than merely differ: queue depth ~1000 everywhere except AWS IoT (unpublished);
+  in-flight 20 (Mosquitto, VerneMQ), 32 (EMQX), 50 (HiveMQ CE), 100 (AWS, fixed); session
+  expiry never (Mosquitto, VerneMQ, HiveMQ) versus 2 h (EMQX) and 1 h (AWS); overflow drops
+  **oldest** on EMQX and **newest** on the rest; and VerneMQ (20 s), NanoMQ (10 s) and AWS
+  (up to 1 h) retransmit unacknowledged QoS 1 to a still-connected client while Mosquitto and
+  EMQX 5 do not. Overflow is silent in every case — no protocol signal reaches the client — so
+  application-level gap detection is the only way to notice. **Still unanswered**: *which* 6
+  topics, whether their effects are idempotent, whether all 6 are QoS 1, payload size, and the
+  broker product — intake 2026-08-17-0150 items b and h.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is

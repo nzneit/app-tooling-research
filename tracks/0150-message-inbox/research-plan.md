@@ -72,9 +72,67 @@ disprove rather than reaching for a batching scheme first. The arithmetic above 
 computed from a third-party benchmark on a different engine version, not a measurement of this
 application; the report measures before it commits.
 
-What does **not** shrink with selectivity is the reconnect replay burst (question 5), which is
-sized by the broker's session-expiry interval rather than by how many topics are durable, and
-which is currently the sharpest unresolved risk in this plan.
+## What MQTT 3.1.1 and keepalive 30 s settle, and what they hand to the broker
+
+The client speaks **MQTT 3.1.1 (protocol version 4)** with **keepalive 30 s**, and there is no
+session-expiry interval (user, 2026-08-18). Spec claims below were verified against the OASIS
+text during plan grounding; the report re-verifies before building.
+
+**Four questions this plan had open are now closed.**
+
+1. **The acknowledgement seam is `handleMessage`, and nothing else.** `customHandleAcks` is a
+   silent no-op below protocol version 5 and `manualAcks` does not exist. No alternative.
+2. **A producer-supplied idempotency key must live inside the payload.** 3.1.1 has no User
+   Properties and no Correlation Data, so there is no protocol-level slot to carry an id
+   beside the message. Question 3's "producer-supplied key" branch means a change to the
+   vendored AsyncAPI schemas — full stop, with no cheaper variant.
+3. **Overlapping-filter copies are indistinguishable.** 3.1.1 has no Subscription Identifier,
+   so when one publish matches two of the client's filters the copies arrive as identical
+   PUBLISH packets on the same concrete topic. A content-hash key *cannot* separate them, and
+   no protocol fix exists. If the app subscribes to overlapping filters, either the key comes
+   from the payload or the filters must stop overlapping. This makes intake item e sharper
+   rather than merely cautionary.
+4. **Retention is not derivable after all.** This plan previously reasoned that the dedup
+   window falls out of the broker's session-expiry interval. **That was wrong for this app**:
+   3.1.1 has no session-expiry concept at any level — the spec states only lower bounds on
+   session lifetime and leaves the upper bound to "administrative policies". So retention is a
+   broker-configuration input, and on the common defaults it may be *unbounded*. The window
+   must be chosen on other grounds and the reasoning written down.
+
+**And one thing the keepalive value does not settle, but should worry us.** Thirty seconds
+gives a 45 s server-side deadline ([MQTT-3.1.2-24], 1.5×), and only client-sent packets reset
+it. That is an enormous margin against a 1.5–20 ms commit — thousands of times over — so
+keepalive starvation from durable writes is quantitatively dead as a concern. But it is a
+*tight* keepalive for a browser: Chromium throttles timers in a tab hidden more than five
+minutes to roughly once per minute, and WebSocket activity is not on the exemption list. A
+60 s timer cannot service a 45 s deadline, so a backgrounded tab plausibly disconnects,
+resumes its session, and replays — repeatedly. The report should establish whether this
+happens today, because if it does it is a live behaviour independent of the inbox, and
+raising keepalive above ~120 s is the obvious mitigation.
+
+## What "undefined" actually means, and why the broker product is now the critical unknown
+
+Per-session queue depth and in-flight window were reported as undefined. **An unconfigured
+setting is a default in force, not an absent limit**, and the defaults were measured across the
+mainstream brokers during plan grounding. They do not merely differ in magnitude — they invert
+in behaviour, which means the design cannot be finished without knowing the product:
+
+| | queue depth | in-flight | session expiry | drops | retransmits while connected |
+|---|---|---|---|---|---|
+| Mosquitto | 1000 | 20 | never | newest | no (since 1.5) |
+| EMQX | 1000 | 32 | 2 h | **oldest** | no (v5; v4 was 30 s) |
+| HiveMQ CE | 1000 | 50 | never | newest | unverified |
+| VerneMQ | 1000 online + 1000 offline | 20 | never | newest | **yes, 20 s** |
+| AWS IoT | no published per-session depth | 100 (fixed) | 1 h | newest | **yes, up to 1 h** |
+
+Four consequences, each of which changes code. **Overflow is silent**: the broker drops queued
+messages with no protocol signal to the client, so the only way to notice is application-level
+gap detection. **Drop direction inverts** — EMQX punches a hole in the middle of the record
+while the others truncate the tail, and recovery logic differs completely. **Three brokers
+retransmit under deferral**, turning the design's own latency into duplicate deliveries, which
+the inbox must absorb idempotently on packet identity. **Session expiry splits the field**, so
+"an abandoned tab queues forever" is true on three brokers and false on two — where the
+opposite risk applies and a backgrounded tab silently loses its subscriptions and its queue.
 
 ## Key questions
 
@@ -95,28 +153,43 @@ which is currently the sharpest unresolved risk in this plan.
    mqtt.js's README warns the client hangs if the callback is never called. At the stated
    ~5 msg/s the collision is much less severe than it looks — see the duty-cycle bound above —
    so the options are no longer evenly matched. The report tests them in this order:
-   - **Defer per message: one transaction per message, no batching.** *The leading candidate
-     and the hypothesis to disprove.* Simplest possible semantics — atomicity at one-message
-     granularity, no batch window to tune, no interaction with the broker's in-flight limit —
-     and the arithmetic says it fits with an order of magnitude of headroom even
-     pessimistically. It must be measured rather than assumed, and the measurement has to
-     include what queues behind it, not just the commit itself.
+   - **Defer per message, releasing acknowledgements through a single receipt-ordered queue.**
+     *The leading candidate and the hypothesis to disprove* — but note the qualifier, which is
+     load-bearing and was missing from this plan's previous draft. **[MQTT-4.6.0-2] requires a
+     client to send PUBACKs in the order the corresponding PUBLISHes were received.** So
+     deferring on the 6 durable topics while acknowledging the other 34 immediately is
+     *non-conforming*, and so is letting two durable topics' independent IndexedDB commits
+     release acks in completion order. The conforming shape is one ordered release queue over
+     **all** traffic: a message's ack waits for every earlier message's ack, durable or not.
+     The cost is bounded and small — a non-durable ack waits at most for the durable commits
+     ahead of it, single-digit to low-tens of milliseconds — but it must be built in from the
+     start, and it is the third and sharpest instance of *selectivity does not buy isolation*.
+     Beyond that the semantics stay simple: atomicity at one-message granularity, no batch
+     window to tune. Measure it rather than assuming, and measure what queues behind it.
    - **Never block; write durably after the ack.** Preserves the pump exactly as accepted and
      gives up on closing the loss window — the inbox then deduplicates but does not prevent
      loss. The fallback if measurement kills the option above, and a legitimate answer if
      question 1 ranks (a) above (b); either way it must be a stated choice, not an outcome
      arrived at silently.
-   - **Batch commits and release acks together.** Now an *optimization*, not a necessity, and
-     it buys little at this rate against real cost: held acknowledgements consume the broker's
-     in-flight window (MQTT 5 `Receive Maximum`; on 3.1.1 a broker-side max-inflight setting,
-     Mosquitto's default 20), so the broker throttles once it fills and the batch window is
-     hard-capped by a number nobody has yet. Reach for it only if per-message deferral measures
-     badly.
+   - **Batch commits and release acks together.** Now an *optimization*, not a necessity. The
+     ordered-release queue above already gives the batching boundary for free, so this is a
+     tuning knob on it rather than a separate design. Its ceiling: held acknowledgements consume
+     the broker's in-flight window, which on MQTT 3.1.1 is broker policy rather than a protocol
+     value — measured defaults are 20 (Mosquitto, VerneMQ), 32 (EMQX), 50 (HiveMQ CE), 100 (AWS
+     IoT, fixed). At 5 msg/s a 20-deep window is about 4 seconds of deferral headroom before
+     the broker stops sending. Reach for batching only if per-message deferral measures badly.
    - **A second connection for durable topics.** Structural isolation, at the price of running
      against 0070 A-6's "a **single** client connection (multiple connections would void the
      per-topic ordering baseline)" and, under `clean: false`, a second clientId and a second
      persistent session. Recorded as considered and **not** recommended: it buys isolation the
-     duty-cycle bound says is not needed.
+     duty-cycle bound says is not needed — though note it is the *only* option that genuinely
+     escapes [MQTT-4.6.0-2]'s ordering constraint, since ack ordering is per-connection.
+
+   Also settled by the protocol version: deferral is **legal but against the grain**.
+   [MQTT-4.5.0-2] says a client must acknowledge "regardless of whether it elects to process"
+   the message, and sets no deadline — so holding a PUBACK violates nothing, but 3.1.1 treats
+   PUBACK as *received*, not *processed*, which is why broker behaviour under deferral diverges
+   so sharply (question 5a).
 
    Protocol-version constraint on the seam itself: `manualAcks` does not exist in mqtt.js and
    `customHandleAcks` is silently a no-op below protocol version 5 — overriding `handleMessage`
@@ -140,20 +213,30 @@ which is currently the sharpest unresolved risk in this plan.
    content-hash key silently swallows both. Also settled here: QoS 0 has no redelivery
    identity at all — measured in the 0060 spike (`check-2::cannot dedup QoS-0 packets`) — and
    is not queued by the broker, so the report says whether QoS 0 is in scope.
-5. **Does the reconnect replay burst survive the accepted bounded queue? — the sharpest
-   unresolved risk in this plan.** A persistent session's backlog arrives at once on reconnect,
-   and its size is set by the broker's session-expiry interval, not by how few topics are
-   durable — so unlike every other cost here, selectivity does not shrink it. On the durable
-   topics alone, at their 5 msg/s ceiling: an hour offline queues ~18,000 messages against
-   0060's delivery-queue bound of **256**, a seventyfold overshoot, and the queue sheds
-   *oldest* on overflow — precisely the messages the persistent session existed to preserve.
-   Add the non-durable QoS 1 topics and the burst is larger still, since the queue is shared.
-   A durable inbox behind a lossy queue protects nothing, so this must be answered before the
-   design is worth building. The report needs the broker's session-expiry interval and
-   per-session queue depth (intake item h) to size it, then says what changes: the bound, the
-   shedding policy (oldest-first is indefensible once some rows are durable), the ack pacing
-   that throttles intake to what can be committed, or a deliberate decision to accept loss on
-   long disconnections and say so out loud.
+5. **Where does the replay backlog actually get lost — and it is not where this plan first
+   said.** The earlier framing here was an uncapped backlog (~18,000 messages after an hour
+   offline) overrunning 0060's delivery-queue bound of 256. **Both halves of that were wrong.**
+   The backlog is capped at the broker by a default of ~1000, not unbounded; and deferred
+   acknowledgement makes the broker's in-flight window (20–100) the flow-control point, so the
+   client-side delivery queue never sees a flood at all. Per-message deferral therefore *fixes*
+   the overrun rather than suffering it — the burst becomes a paced drain, roughly 3 s at
+   3 ms/commit for a 1000-message backlog. **The real loss is upstream and silent**: the broker
+   discards beyond its cap with no protocol signal, so the client cannot tell a complete replay
+   from a truncated one. The report answers what detects that — application-level sequence-gap
+   detection is the only mechanism available on 3.1.1 — and what the app does when it fires.
+   Two sub-questions survive: whether 0060's oldest-first shedding is still defensible once
+   some rows are durable (it is not, if the queue is ever reached), and what the drain costs
+   the other 34 topics, which queue behind the same serialized pump and the same ordered ack
+   release.
+5a. **What does the broker actually do under deferral — and which broker is it?** Not a
+   detail, and not answerable from the spec: [MQTT-4.4.0-1] requires redelivery *only* on
+   reconnect, so in-connection retransmission is a broker choice. VerneMQ retransmits after
+   20 s, NanoMQ after 10 s, AWS for up to an hour; Mosquitto and EMQX 5 do not. On a
+   retransmitting broker the design's own commit latency manufactures the duplicates the inbox
+   exists to suppress — self-inflicted, absorbed correctly, but it must be expected rather than
+   discovered. Combined with the drop-direction and expiry splits in the table above, **naming
+   the broker product and version is the single highest-value fact still missing** (intake item
+   h). The report must not write a design that is only correct on one of them without saying so.
 6. **Atomicity or durability — which guarantee is actually being bought?** These are not the
    same purchase on the stated browser matrix. IndexedDB *does* give all-or-nothing commit
    across object stores on both engines. It does *not* give a flush guarantee: Firefox has
@@ -207,14 +290,17 @@ which is currently the sharpest unresolved risk in this plan.
     flagged it as reopening if tabs share a connection; durable storage is cross-tab by
     construction, so this track reopens it regardless. Note both an open IndexedDB connection
     and a held Web Lock forfeit back/forward-cache eligibility.
-12. **Retention, compaction, reset, and poison recovery.** The retention window looks
-    **derivable rather than chosen**, and the report should test that: under a persistent
-    session the broker will never redeliver a message older than its **session-expiry
-    interval**, so a key older than that is dead weight and expiry-plus-margin is the natural
-    window. That makes the sizing comfortable — at 5 msg/s, keys alone run about 1.2 MB per
-    hour of expiry, so even a 24-hour window is ~28 MB, well inside quota. Storing payloads
-    rather than keys alone changes this by whatever the payload size is, which is the number to
-    get. What still needs deciding: what actually runs the pruning and when (a sweep on
+12. **Retention, compaction, reset, and poison recovery.** An earlier draft of this plan
+    reasoned that the retention window is **derivable** from the broker's session-expiry
+    interval, since the broker never redelivers beyond it. **That does not hold here**: MQTT
+    3.1.1 has no session-expiry concept, and three of the five surveyed brokers never expire a
+    persistent session by default — so on those, "how far back can a redelivery arrive?" has no
+    upper bound and the window must be *chosen*. Choose it against the practical redelivery
+    horizon and the storage budget, and write the reasoning down. The sizing is comfortable
+    either way: at 5 msg/s, keys alone run about 1.2 MB per hour retained, so even a 24-hour
+    window is ~28 MB, well inside quota. Storing payloads rather than keys alone changes this by
+    whatever the payload size is, which is the number to get. Also decide what runs the pruning
+    and when (a sweep on
     startup, a rolling delete, an index range), and the recovery half — persistence removes
     "reload fixes it" as an escape hatch permanently, so the report specifies what clears the
     inbox, who can trigger it, how a corrupt store is *detected*, and what the app does
