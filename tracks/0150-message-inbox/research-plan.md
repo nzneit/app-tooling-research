@@ -10,8 +10,9 @@ transaction as the effect that message applies, so that at-least-once delivery b
 effectively-once processing across page reloads and tab crashes. The track produces the
 dedup-key design, the acknowledgement policy, the transaction scope, the retention and
 recovery policy, and the adopt / adopt + wrap / build / skip verdict on the storage layer
-underneath. It starts from 0060's accepted transport boundary (D-0015) and 0070's accepted
-single-dispatch ingress (D-0016), and it may extend those seams but owns neither.
+underneath, applied **per topic, opt-in** rather than to all traffic. It starts from 0060's
+accepted transport boundary (D-0015) and 0070's accepted single-dispatch ingress (D-0016), and
+it may extend those seams but owns neither.
 
 ## What the confirmed session mode settles, and what it opens
 
@@ -38,6 +39,30 @@ acknowledgement seam, not the storage library, the track's centre of gravity.
 verified twice against source. The report re-verifies them at the pinned version before
 building on them.)
 
+## The durable path is per topic; the acknowledgement path is not
+
+IndexedDB round trips are wanted only for **selected topics** (user, 2026-08-18). This is the
+right shape and it has a pre-authorized home: 0060's accepted `ChannelPolicy` already carries
+`validate`, `direction`, `qos`, `sample`, and `reasonCode` per channel, and the spike that
+refused per-row `dedupeKey` overrides said a second dedup policy should arrive as "a policy-row
+addition, not an interface redesign". A durability flag on the policy row is exactly that, and
+it should not require reshaping any interface.
+
+**But selectivity buys frequency, not isolation, and the plan must not confuse the two.**
+`handleMessage` is a single client-wide hook, serialized one message at a time across *every*
+topic. So a durable write performed inside it to defer one topic's acknowledgement blocks the
+pump for all topics — the non-durable 
+majority included — and starves the connection's keepalive while it runs. Per-topic policy
+reduces how *often* the slow path executes; it does nothing to reduce its blast radius when it
+does. Any design that reads "only these topics pay the cost" is wrong on the ack path unless it
+also isolates the pump.
+
+Two consequences follow, and they pull in opposite directions. The cost question gets easier:
+the durable path's message rate is a fraction of the ~50/s aggregate, retention and quota
+shrink with it, and the case for a thin wrapper over a heavyweight engine strengthens. The
+correctness question gets harder: head-of-line blocking is now a first-class design problem
+rather than a throughput footnote, and the report owes an answer to it.
+
 ## Key questions
 
 1. **What is the inbox for?** Four goals are routinely conflated and want different stores,
@@ -47,20 +72,37 @@ building on them.)
    the confirmed session mode makes (b) live and arguably primary, since its failure is
    silent and unrecoverable. The report ranks them and states what it deliberately does
    **not** buy, before any candidate is compared.
-2. **Should acknowledgement be deferred until the effect commits — and can it be, here?**
-   This is the track's hardest question because the obvious answer collides with an accepted
-   rule. Deferring means doing durable work inside `handleMessage` before calling its
-   callback. But 0060 Key question 5 explicitly requires the opposite — "never do slow work
-   in `handleMessage`" — because the handler is serialized one-at-a-time and slow work starves
+2. **Should acknowledgement be deferred until the effect commits — and at what cost to the
+   topics that never asked for durability?** The track's hardest question, because the obvious
+   answer collides with an accepted rule and because per-topic selectivity does not contain
+   the damage. Deferring means doing durable work inside `handleMessage` before calling its
+   callback, and 0060 Key question 5 requires the opposite — "never do slow work in
+   `handleMessage`" — because the handler is serialized one-at-a-time and slow work starves
    the keepalive ([#1935](https://github.com/mqttjs/MQTT.js/issues/1935)), and because
-   mqtt.js's README warns the client hangs if the callback is never called. At ~50 msg/s a
-   serialized IndexedDB round trip per message is a real duty-cycle question, not a rounding
-   error. The report must either resolve the collision (batched commits with batched acks? a
-   bounded durable staging write that is cheaper than the full effect?) or state plainly that
-   the loss window cannot be closed at this ingest rate and say what that costs. Note the
-   protocol-version constraint: `manualAcks` does not exist in mqtt.js and `customHandleAcks`
-   is silently a no-op below protocol version 5 — overriding `handleMessage` is the seam that
-   works on both.
+   mqtt.js's README warns the client hangs if the callback is never called. The report weighs
+   at least these, and says which it recommends and what each forfeits:
+   - **Defer only for durable topics**, accepting head-of-line blocking of every other topic
+     for the duration of each durable commit. Cheapest to build; the cost is borne by traffic
+     that opted out.
+   - **Never block; write durably after the ack.** Preserves the pump exactly as accepted, and
+     gives up on closing the loss window — the inbox then deduplicates but does not prevent
+     loss. A legitimate answer if question 1 ranks (a) above (b), but it must be stated as a
+     choice rather than arrived at silently.
+   - **Batch commits and release acks together.** Amortizes the transaction cost, which is the
+     dominant cost, at the price of bounded added latency. Note the ceiling this runs into:
+     held acknowledgements consume the broker's in-flight window (MQTT 5 `Receive Maximum`; on
+     3.1.1 a broker-side max-inflight setting), so the broker throttles once it fills. That is
+     correct backpressure rather than a bug, but it hard-caps the batch window and the report
+     must size it against the configured limit.
+   - **A second connection for durable topics**, isolating the pump structurally. Note this
+     runs against 0070 A-6's "a **single** client connection (multiple connections would void
+     the per-topic ordering baseline)", and under `clean: false` it needs a second clientId and
+     a second persistent session on the broker. Named for completeness; the burden of proof is
+     against it.
+
+   Protocol-version constraint on the seam itself: `manualAcks` does not exist in mqtt.js and
+   `customHandleAcks` is silently a no-op below protocol version 5 — overriding `handleMessage`
+   is the mechanism that works on both.
 3. **What is the dedup key, given that MQTT supplies none — and where in the pipeline is it
    computed?** The protocol defines no application-visible unique message identifier, and the
    Packet Identifier cannot survive a reload, which is exactly the case a persistent session
@@ -84,8 +126,11 @@ building on them.)
    session's backlog arrives at once on reconnect. 0060's delivery queue is count-bounded
    (default 256) and sheds *oldest* on overflow with a class-1 `queue-overflow` event, so at
    ~50 msg/s a disconnection of a minute can shed exactly the messages the persistent session
-   was preserving — a durable inbox behind a lossy queue protects nothing. The report sizes
-   this and says what changes: the bound, the shedding policy, the ack pacing, or nothing.
+   was preserving — a durable inbox behind a lossy queue protects nothing. The queue is shared
+   across all topics, so a burst on non-durable topics can evict durable ones: another case
+   where per-topic policy does not buy per-topic isolation. The report sizes this and says what
+   changes — the bound, the shedding policy (oldest-first is wrong if some rows are durable),
+   the ack pacing, or nothing.
 6. **Atomicity or durability — which guarantee is actually being bought?** These are not the
    same purchase on the stated browser matrix. IndexedDB *does* give all-or-nothing commit
    across object stores on both engines. It does *not* give a flush guarantee: Firefox has
@@ -100,16 +145,20 @@ building on them.)
    in in-memory Zustand/xstate state, there is **nothing to be atomic with** and the pattern
    degrades to a durable seen-set — a materially smaller design that the report must name as
    such rather than describe as an inbox.
-8. **What does this cost at 50 msg/s, and does it fit the accepted pipeline?** The 0060
-   ingress pipeline is fixed and synchronous — one JS turn, riding Zustand's synchronous
-   commit for atomicity — and was benched above 1k msg/s in Node. IndexedDB is asynchronous and
-   its per-transaction cost is dominated by the durability flush (Nolan Lawson measured 1,000
-   single-record transactions at 10,456 ms strict versus 631 ms relaxed in Chrome 92). So: one
-   transaction per message, or batching? Batching trades atomicity granularity and latency for
-   throughput, and interacts directly with question 2's ack pacing. Note the prior deviation
-   already on record — the kit *initiates* `cancelQueries` and writes in the same turn because
-   awaiting it would break the one-turn invariant; an awaited IndexedDB commit is the same
-   problem, larger.
+8. **What does this cost at the durable topics' actual rate, and does it fit the accepted
+   pipeline?** The rate that matters is the selected topics' share of the ~50 msg/s aggregate,
+   not the aggregate — so the first job is to get that number (intake item b) rather than
+   design against the worst case. The 0060 ingress pipeline is fixed and synchronous — one JS
+   turn, riding Zustand's synchronous commit for atomicity — and was benched above 1k msg/s in
+   Node; IndexedDB is asynchronous and its per-transaction cost is dominated by the durability
+   flush (Nolan Lawson measured 1,000 single-record transactions at 10,456 ms strict versus
+   631 ms relaxed in Chrome 92). So: one transaction per message, or batching? Batching trades
+   atomicity granularity and latency for throughput and interacts directly with question 2's
+   ack pacing. Note the prior deviation already on record — the kit *initiates* `cancelQueries`
+   and writes in the same turn because awaiting it would break the one-turn invariant; an
+   awaited IndexedDB commit is the same problem, larger. And note the measurement trap: a
+   benchmark of the durable path alone understates the real cost, because what the connection
+   actually pays is that latency multiplied by everything queued behind it.
 9. **What is the read path at startup, and what may not happen until it finishes?** Does the
    dedup set load wholesale before the first dispatch, or does each message pay a `get` on the
    hot path? And must subscription be withheld until the load completes — because under a
@@ -148,8 +197,10 @@ building on them.)
 14. **Adopt or build, and what would an adopted engine be paid for?** Every surveyed sync
     engine either requires a companion server the front-end team does not control, gates the
     relevant storage behind payment, or states outright that duplicate handling is the
-    application's problem. The honest shape may be "build on one thin wrapper" — the report
-    says explicitly what a heavier dependency would buy.
+    application's problem. Per-topic scoping strengthens the "build on one thin wrapper"
+    hypothesis further — a heavyweight engine is a poor trade for a store that only a fraction
+    of traffic touches — so the report says explicitly what a heavier dependency would buy,
+    and the burden of proof sits with adoption.
 15. **Is the await-in-transaction footgun controlled by runtime error, by review discipline, or
     by static rule?** IndexedDB commits a transaction as soon as it goes unused within a tick,
     so awaiting any foreign promise inside one kills it. Dexie fails loudly
@@ -166,6 +217,18 @@ building on them.)
     harness, or `@vitest/browser`), plus a real broker for the persistent-session replay path
     — and if neither is reachable under D-0001, does the report say plainly that its central
     claim is unverified?
+17. **What does the policy row actually look like, and what combinations are illegal?** The
+    concrete interface deliverable, and the place per-topic selection is declared. A durability
+    field joins `validate`, `direction`, `qos`, `sample`, and `reasonCode` on 0060's accepted
+    `ChannelPolicy`, per the pre-authorized "policy-row addition, not an interface redesign".
+    Is it a boolean, or does it carry the key selector and the retention window with it? At
+    least one combination is nonsense and should be unrepresentable rather than merely
+    discouraged: **durable on a `qos: 0` row**, which has neither a redelivery to deduplicate
+    nor an acknowledgement to defer, and which the broker does not queue across a
+    disconnection. `direction: 'out'` rows are out of scope by the same reasoning. The report
+    also says what a durable row means when its filter is a **wildcard** matching many concrete
+    topics, given the ingress kit already treats an entity observed on a second concrete topic
+    of the same wildcard stream while unstamped as a declaration error.
 
 ## Seams this track cites rather than restates
 
@@ -314,10 +377,12 @@ standing gaps in `facts/app-profile.md` (the whole Contracts section; reconnect 
 which the session mode makes more consequential than it was). The four that now gate the
 survey rather than colour it:
 
+- **Which topics get the durable path, and what share of the ~50 msg/s do they carry?** (item
+  b) — now the track's primary input rather than one of several. It is the selection rule that
+  goes on the policy row, it sets the rate every cost estimate is built on, and paired with
+  "are their effects idempotent?" it decides how much of the design is needed at all.
 - **Is the persisted clientId shared across tabs or per-tab?** (item f) — the two readings have
   opposite failure modes and one of them is a live defect independent of this track.
-- **Which streams, and are their effects idempotent?** (item b) — only non-idempotent effects
-  need an inbox.
 - **Is there a stable per-message identifier in any payload today**, and can one be added?
   (item c)
 - **Where do effects currently land** (item d) — durable storage, or in-memory state only? If

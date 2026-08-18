@@ -79,6 +79,17 @@ Node version, package manager, the whole Contracts section, test framework, and 
   unanswered and consequential**: whether the persisted clientId is shared across tabs or is
   per-tab — see intake 2026-08-17-0150 item f. The two readings have opposite failure modes
   and one of them is a live defect independent of any inbox.
+- Durable-ingest scope: **per topic, opt-in** (2026-08-18, user) — IndexedDB round trips are
+  wanted only for messages on selected topics, not for all traffic. This lands as a field on
+  0060's accepted per-channel `ChannelPolicy` row, which is the extension shape that track's
+  spike pre-authorized ("a policy-row addition, not an interface redesign"). Two consequences
+  to carry. It lowers the cost estimate — the rate that matters is the selected topics' share
+  of the ~50 msg/s, not the aggregate — and it correspondingly shrinks retention and quota.
+  It does **not** buy isolation: `handleMessage` is one client-wide serialized hook and 0060's
+  delivery queue is shared, so a durable write blocks every other topic while it runs and a
+  burst on non-durable topics can shed durable ones. **Still unanswered**: which topics, and
+  what share of traffic they carry — intake 2026-08-17-0150 item b, now that track's primary
+  input.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is
