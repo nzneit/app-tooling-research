@@ -257,13 +257,55 @@ because link stealing is enabled.
 
 ### Smaller, but each changes code
 
-- **Duplicate clientId over WSS *steals the link*, because this deployment enables it.**
-  `allowLinkStealing` defaults false and the WebSocket factories never set it — unlike the four
-  MQTT TCP factories — but the operator has enabled it on the `wss` connector (user,
-  2026-08-18). The code default is *reject*; the configured behaviour is *steal*, and only the
-  configured behaviour matters. A second connection presenting the same clientId disconnects
-  the first. Whether that is a live defect depends entirely on the clientId's tab scope, which
-  is still unanswered — see question 11.
+- **Duplicate clientId over WSS *steals the link*, and that is the right setting — keep it.**
+  `allowLinkStealing` defaults false and the WebSocket factories never set it, but the operator
+  has enabled it on the `wss` connector and offered to turn it off. **The recommendation is to
+  decline**, on four grounds, verified in `apache/activemq` and mqtt.js source:
+  1. **It cannot help.** The flag is consulted only when a clientId is already in
+     `clientIdSet`. With unique-per-tab clientIds, the sole event that reaches that branch is
+     *one tab reconnecting against its own ghost* — where stealing is exactly the wanted
+     outcome. There is no second party whose session could be hijacked.
+  2. **It costs real outage.** Both sides declare death at 1.5× keepalive = 45 s, but ActiveMQ
+     polls on a 15 s grid with `lastReceiveTime` snapped forward to tick boundaries, so the
+     broker reaps 45–60 s after the last inbound frame — always *after* mqtt.js has begun
+     retrying. The client is structurally guaranteed to knock at least once on a still-occupied
+     clientId. Disabling adds roughly 14–30 s of outage per ungraceful drop, up to ~60 s when
+     the browser surfaces the close promptly. With stealing on, the first retry at ~1 s wins.
+  3. **It would make the broker non-conformant.** [MQTT-3.1.4-2]: "If the ClientId represents a
+     Client already connected to the Server then the Server MUST disconnect the existing
+     Client." Link stealing *is* the specified behaviour; the offer is to violate the spec, not
+     to harden against it.
+  4. **It re-arms a second, unrelated gate.** `TopicRegion.addConsumer` throws "Durable consumer
+     is in use" under the same `!isAllowLinkStealing()` condition, and `clean: false` at QoS ≥ 1
+     does create durable subscriptions here. More failure surface for no benefit.
+
+  The historical objection is stale: every WebSocket and durable-subscription link-stealing race
+  (AMQ-5237, 5385, 5396, 5473, 5856) was fixed by 5.12.0 in 2015. **But the version cuts both
+  ways** — below 5.12.0, AMQ-5856 says link stealing simply does not work over MQTT-on-WebSocket,
+  so the flag would already be inert and the real fix is an upgrade. **If reconnect latency is
+  the actual concern, the lever is keepalive, not this flag**: 30 s sets the 45 s floor on both
+  sides, and lowering it to ~10 s would give a 15–20 s ghost. Note that pulls against the
+  background-tab throttling hazard already recorded, so it is a trade rather than a free win.
+- **Two app-side checks fell out of the link-stealing analysis, and both may be live.** Neither
+  is decidable from here (D-0004), so both are intake items rather than findings.
+  1. **`reconnectPeriod: 0` would silently disable mqtt.js's resubscribe.** 0060's boundary owns
+     an exponential backoff with a give-up policy, while mqtt.js's own reconnect is a fixed
+     `setInterval` — which strongly implies the boundary sets `reconnectPeriod: 0`. In mqtt.js
+     5.15.2 the resubscribe bookkeeping is gated on `reconnectPeriod > 0`, so `_resubscribeTopics`
+     is never populated and `options.resubscribe` becomes a **no-op**. Ordinarily invisible,
+     because a broker restores subscriptions on a `clean: false` reconnect — but **ActiveMQ does
+     not restore QoS-0 subscriptions**, so if the boundary is relying on mqtt.js's resubscribe
+     rather than re-subscribing explicitly, the app goes deaf on the 34 QoS-0 topics after its
+     first reconnect. Check which.
+  2. **A will message would fire on every ordinary tab close.** mqtt.js sends no DISCONNECT on
+     page unload, and ActiveMQ's `onWebSocketClose` synthesises one — which is why a normally
+     closed tab cleans up immediately — but [MQTT-3.1.2-8] means any configured will is published
+     on every close and refresh, not only on genuine failures. Check whether a will is set.
+
+  Also worth adopting regardless of the link-stealing decision: **`reconnectOnConnackError: true`**
+  (present since mqtt.js 5.10.3, absent from `defaultConnectOptions`, so currently falsy). Without
+  it, recovery from any refused CONNACK depends on the broker closing the socket rather than on
+  the client. It costs nothing when connections are accepted.
 - **No poison-message escape.** With no redelivery policy on the MQTT path and no DLQ routing,
   a message the browser can never commit is redelivered on every reconnect forever and wedges
   that subscription's progress. The inbox needs its own give-up-and-acknowledge rule.

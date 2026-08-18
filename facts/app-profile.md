@@ -160,6 +160,19 @@ Node version, package manager, the whole Contracts section, test framework, and 
   observable symptom is both tabs going `degraded` and silently stopping**, not indefinite
   flapping. This turned out **not** to be live — tabs never share a clientId, so the prediction
   is falsified. Left in place as the record; see the next entry for the branch that is live.
+  **2026-08-18 ruling — keep link stealing enabled.** The operator offered to disable it; the
+  recommendation is to decline, and the reasoning is in the 0150 plan. In short: it cannot help,
+  because the flag is consulted only when a clientId is already registered and with unique
+  per-tab ids the only such event is one tab reconnecting against its own ghost, where stealing
+  is the wanted outcome. It would cost 14–30 s of extra outage per ungraceful drop (up to ~60 s),
+  since ActiveMQ polls its 45 s keepalive threshold on a 15 s grid and therefore reaps the ghost
+  *after* mqtt.js has already begun retrying. It would put the broker in violation of
+  [MQTT-3.1.4-2], which requires disconnecting the existing client on a duplicate ClientId. And
+  it would re-arm `TopicRegion.addConsumer`'s "Durable consumer is in use" throw, gated on the
+  same flag. Historical link-stealing races were fixed by 5.12.0 (2015); below that version
+  AMQ-5856 makes the flag inert over MQTT-on-WebSocket anyway. If reconnect latency is the real
+  concern the lever is **keepalive** — 30 s sets the 45 s floor on both sides — traded against
+  the background-tab throttling hazard recorded above.
 - clientId scope: **unique per browser tab** (2026-08-18, user). This is the **worse** of the
   two branches and a live production liability independent of track 0150. Each tab mints **6
   durable JMS subscriptions** that nothing removes (`offlineDurableSubscriberTimeout` defaults
