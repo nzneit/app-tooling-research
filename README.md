@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** the meta track 9900 (D-0025) has a drafted report and **all seven gating rulings are resolved** (D-0028 to D-0034, 2026-08-17) — the report now awaits only the user's acceptance decision. It recommends **build, at rung 0, and change less than we could**; D-0029 redefined the ceiling's unit as a logical workflow step, D-0033 restored the gate review as a named stage at net-zero cost, and D-0031 put the existing gate into CI. Five plans still await the user's go gate: 0100 (revised), 0110–0140. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), and the D-0019 ordering stamp with the contract owners.
+> **Frontier:** 9900 accepted (D-0037) — the validator now checks `CLAUDE.md` and `docs/`, masks inline code spans, and the gate review is written down at `.claude/skills/gate-review/`. Next: the user's go gate on five drafted plans — 0100 (revised), 0110–0140. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), the D-0019 ordering stamp with the contract owners, and two passes deferred rather than dropped — the one-off lifecycle FMEA (D-0036) and the citation staleness sweep (D-0034).
 
 ## How it works
 
@@ -48,4 +48,4 @@ in `findings.md` — the durable artifact.
 | 0120-e2e-testing | End-to-end browser testing of the live MQTT-over-WSS and reason-code REST flows (D-0022) | planned |
 | 0130-accessibility-linting | Static + automated accessibility checking for the React UI (D-0022) | planned |
 | 0140-supply-chain | Dependency vulnerability and supply-chain auditing (D-0022) | planned |
-| 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | report drafted |
+| 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | accepted |

@@ -40,7 +40,8 @@ fails on Node 24.x.
 - [codebase-design](.claude/skills/codebase-design/SKILL.md) — vendored deep-module vocabulary
   and the canonical design-it-twice pattern for **code interfaces**. Authoritative for those.
 
-Track 9900-process-design owns improvements to this machinery. Several practices this program
-relies on — adversarial review, the survey completeness critic, the candidate gap sweep — are
-still undocumented and get re-derived from context each time; that is known debt, recorded in
+- [gate-review](.claude/skills/gate-review/SKILL.md) — the two-lens pass that runs at an
+  acceptance gate (D-0033, D-0037). A record of practice, not a per-track obligation.
+
+Track 9900-process-design is accepted (D-0037). Its living defect register is
 `tracks/9900-process-design/seed-defect-corpus.md`.

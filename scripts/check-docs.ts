@@ -32,6 +32,25 @@ export function stripFenced(text: string): string {
     .join("\n");
 }
 
+// Blank out inline code spans (`x`, ``a`b``) while preserving line count, so
+// markdown syntax QUOTED inside backticks is never parsed as a live link.
+//
+// Shipping conditions from the 9900 report (D-0037), all load-bearing:
+//   1. Compose this AFTER stripFenced, never before. Running it first produces
+//      13 false errors, because a fenced block's own backticks pair up across
+//      the fence and unmask link syntax the fence was hiding.
+//   2. Inline spans only. Do NOT extend this to 4-space-indented code blocks by
+//      regex — indentation is context-sensitive (list continuation lines are
+//      also indented) and a regex cannot tell them apart.
+//   3. Scoped to the link scan alone (see checkLinks). It must not reach heading
+//      parsing or anchor resolution: blanking a heading's backticked text would
+//      change its slug and break anchors that resolve correctly today.
+// An unterminated backtick run matches nothing and is left alone, which is the
+// safe direction — this check exists to remove false positives, not add them.
+export function stripInlineCode(text: string): string {
+  return text.replace(/(`+)([\s\S]*?)\1(?!`)/g, (m) => m.replace(/[^\n]/g, " "));
+}
+
 // Split a doc into heading blocks at exactly `level` hashes. A heading at any
 // other level ends the current entry, so meta/body cannot leak across entries.
 export function parseEntries(text: string, level: 3 | 4): Entry[] {
@@ -111,7 +130,9 @@ export function checkLinks(
 ): string[] {
   const errs: string[] = [];
   for (const f of files)
-    for (const m of stripFenced(f.text).matchAll(/\]\(([^)\s]+)\)/g)) {
+    // stripFenced first, then stripInlineCode — the order is a shipping
+    // condition, not a style choice. See stripInlineCode's comment.
+    for (const m of stripInlineCode(stripFenced(f.text)).matchAll(/\]\(([^)\s]+)\)/g)) {
       const target = m[1];
       if (/^[a-z][a-z+.-]*:/.test(target) || target.startsWith("#")) continue;
       const [rel, anchor] = target.split("#");
@@ -261,12 +282,28 @@ function main(): void {
     : [];
 
   const readme = read("README.md") ?? "";
+  // The link-checked set (D-0037, 9900 item 1). Two exclusions are DELIBERATE
+  // and must not be "fixed" by a future contributor:
+  //   templates/ — excluded on purpose. A template's relative links are written
+  //     from the location the template is SCAFFOLDED INTO, not from where the
+  //     template file sits, so they are correct in use and unresolvable in
+  //     place. Measured 2026-08-17: including templates/ adds exactly 3 errors,
+  //     all in templates/spike/ — `../../research-plan.md` and `../../report.md`
+  //     in findings.md, which resolve once the spike lands under
+  //     tracks/<track>/spikes/<name>/, plus one spec path in its README. The
+  //     right repair is this exclusion, not rewriting the templates to satisfy
+  //     a checker at the cost of being wrong for their actual readers.
+  //   .claude/skills/codebase-design/ — vendored byte-verbatim under D-0017.
+  //     Never checked, because a finding there could only be fixed by editing
+  //     a vendored file, which the repo forbids.
   const linkedDocs = [
     { path: "README.md", text: readme },
     { path: "DECISIONS.md", text: read("DECISIONS.md") ?? "" },
+    { path: "CLAUDE.md", text: read("CLAUDE.md") ?? "" },
     ...listMarkdown("facts"),
     ...listMarkdown("tracks"),
     ...listMarkdown("intake"),
+    ...listMarkdown("docs"),
   ];
   const reports = listMarkdown("tracks").filter((f) => isTrackReport(f.path));
 

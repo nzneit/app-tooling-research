@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   parseEntries, checkIds, slugify, resolveAnchor, checkLinks,
   parseIndexRows, checkIndex, checkTrackDirs, checkReports, checkIntake,
-  stripFenced, checkFrontier, isTrackReport, isIgnoredPath, checkSpikes,
+  stripFenced, stripInlineCode, checkFrontier, isTrackReport, isIgnoredPath, checkSpikes,
 } from "./check-docs.ts";
 import type { Entry, Spike } from "./check-docs.ts";
 
@@ -155,4 +155,47 @@ test("checkSpikes rejects bad slug, missing findings, bad status", () => {
     { track: "0060-x", name: "bad-status", findings: "**Status**: done" },
   ]);
   assert.equal(errs.length, 3);
+});
+
+// --- D-0037 item 2: inline code spans are masked in the link scan ---------
+// The positive case: the defect this shipped to fix. A document that QUOTES
+// markdown link syntax inside backticks must not be read as containing a link.
+test("stripInlineCode masks link syntax quoted in backticks", () => {
+  const text = "Use `[label](target)` to write a link.";
+  assert.equal(stripInlineCode(text).includes("("), false);
+  assert.deepEqual(checkLinks([{ path: "a.md", text }], () => null), []);
+});
+
+// The INVERSE case named in the 9900 report's spike list, and the reason the
+// composition order is a shipping condition rather than a style choice.
+//
+// The leak mechanism, made concrete: a lone backtick in prose above a fenced
+// block. Running the inline strip FIRST lets that backtick pair with the last
+// backtick of the opening ``` fence, consuming the fence marker. stripFenced
+// then sees only one fence line, concludes the block never closed, and the
+// relative link inside it is exposed as live. Fence-first cannot do this,
+// because the whole block is blanked before any backtick pairing happens.
+test("stripInlineCode composed after stripFenced keeps fenced links masked", () => {
+  const text = "A ` lone backtick in prose.\n```\nSee [x](./nope.md) here.\n```\nEnd.";
+  assert.deepEqual(checkLinks([{ path: "a.md", text }], () => null), []);
+  assert.ok(
+    stripFenced(stripInlineCode(text)).includes("./nope.md"),
+    "inline-first must leak the fenced link, or this shipping condition is moot",
+  );
+  assert.equal(stripInlineCode(stripFenced(text)).includes("./nope.md"), false);
+});
+
+test("stripInlineCode preserves line count and leaves live links alone", () => {
+  const text = "a `code` b\nline two [real](./x.md)\n`multi\nline` end";
+  assert.equal(stripInlineCode(text).split("\n").length, text.split("\n").length);
+  assert.ok(stripInlineCode(text).includes("./x.md"));
+});
+
+test("stripInlineCode leaves an unterminated backtick run alone", () => {
+  const text = "an unclosed ` backtick and [real](./x.md)";
+  assert.ok(stripInlineCode(text).includes("./x.md"));
+});
+
+test("stripInlineCode handles multi-backtick spans containing backticks", () => {
+  assert.equal(stripInlineCode("``a `b` c``").trim(), "");
 });
