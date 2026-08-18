@@ -1,0 +1,23 @@
+{
+  "name": "spike-0150-durable-inbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/ws": "8.18.1",
+    "aedes": "1.1.1",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
+    "playwright": "1.62.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "ws": "8.21.3"
+  },
+  "dependencies": {
+    "mqtt": "5.15.2"
+  }
+}
