@@ -41,6 +41,17 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
 
+2026-08-17 update — By steps I really meant to approximate logical steps in a workflows / dynamic workflows.
+
+2026-08-17 update (agent, recording the consequence) — **Resolved, and it is neither reading this
+item offered.** Recorded as **D-0029**: a step is a logical stage in the workflow that executes a
+track. Validator checks and always-loaded prose are ceiling-*free*; a new named pass in a track's
+execution is ceiling-*governed*. The report's four shipped items stay free, so its recommendation
+is unaffected, and its assumption A-1 is marked superseded in place. Two consequences the report
+did not anticipate are now on the record in D-0029: the budgeted object is the shape of the
+track-executing workflow, and the always-loaded price must still be reported even though it is
+ceiling-free.
+
 ## b — does a cancelled proposal count as payment?
 
 Nine of the survey's 43 proposed controls paid their offset in a class the ceiling rule has no
@@ -63,6 +74,12 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
 
+2026-08-17 update — Let's not admit cancelled proposals.
+
+2026-08-17 update (agent, recording the consequence) — Recorded as **D-0030**, which also closes
+the two adjacent classes the survey invoked: a *future rate-limit* and a *tooling offset* are not
+payment either, for the same reason — an offset must retire something that exists.
+
 ## c — the membership rule for `DECISIONS.md`'s "Constraints in force" header
 
 The header lists D-0001 through D-0007 and D-0011, and has not been edited since the initial
@@ -83,6 +100,16 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 `YYYY-MM-DD update — `. If an earlier paragraph is now wrong — it said something stayed
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
+
+2026-08-17 update — I don't have a preference how we handle this.
+
+2026-08-17 update (agent, deciding under that delegation) — **Resolved as option (iii)**, recorded
+as **D-0032**: the block is retitled **"Start here"** and states that it is a partial reading order,
+that absence from it never means a decision does not bind, and that the ledger below is the
+complete authoritative set. No membership rule, no checker. Rules (i) and (ii) were both rejected
+for the same reason — each commits the repo to maintaining a list that will drift again, which is
+the defect itself. Noted plainly in the entry: decided by the agent under delegation, not by the
+repo owner.
 
 ## d — reviewed exception? Making the gate review mandatory (flagged cut)
 
@@ -113,6 +140,8 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 `YYYY-MM-DD update — `. If an earlier paragraph is now wrong — it said something stayed
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
+
+2026-08-17 update — I don't have a preference how we handle this.
 
 ## e — reviewed exception? The immutable-ref citation rule (flagged cut)
 
@@ -151,7 +180,9 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
 
-## f — "gap sweep" versus "gap scan": which is which?
+2026-08-17 update — I don't have a preference how we handle this.
+
+## f — "gap sweep" versus "completeness scan": which is which?
 
 The two terms appear 38 and 18 times respectively across the corpus, denote two genuinely
 different things, and neither is defined anywhere. The report's position is that one sentence
@@ -170,6 +201,15 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 `YYYY-MM-DD update — `. If an earlier paragraph is now wrong — it said something stayed
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
+
+2026-08-17 update — "gap sweep" as cross-cutting adversarial pass over a wave's finished reports 
+that hunts for falsified claims, and "completeness scan" should be retired in favor of "completeness scan" as "within-track completeness check asking which candidates a survey never considered" to disambiguate use of "gap"
+
+2026-08-17 update (agent, recording the consequence) — Recorded as **D-0028** and applied: all
+22 occurrences of "gap scan" / "gap-scan" / "gap-scanning" across six files are now "completeness
+scan". Two of those files are **accepted reports** (0060, 0070); each carries a dated in-place
+annotation recording the rename, so the edit to an accepted artifact is visible rather than
+silent. No claim in any document changed.
 
 ## g — should this repo have CI?
 
@@ -211,3 +251,12 @@ Answer here: when this item is resolved, append a new paragraph below it, starti
 `YYYY-MM-DD update — `. If an earlier paragraph is now wrong — it said something stayed
 open that has since been answered — mark it superseded in place rather than leaving it to
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
+
+2026-08-17 update — go with recommendation **CI running the existing gate only** (`check-docs.ts` plus the tests)
+
+2026-08-17 update (agent, recording the consequence) — **Built and recorded as D-0031.**
+`.github/workflows/ci.yml` runs `node scripts/check-docs.ts` then `node --test scripts/*.test.ts`
+on pull requests and pushes to `main`, with no install step and no new check. The file carries a
+comment saying that adding a check to it is a ceiling decision under D-0029, not a CI-config
+change, so the "gate only" boundary is stated where someone would break it. This also makes
+D-0027's rung 2 a real option for future tracks rather than a notional one.

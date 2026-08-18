@@ -64,7 +64,7 @@ What already runs, mechanically: `node scripts/check-docs.ts` covers eight check
 *(verified 2026-08-15)*.
 
 What already runs, editorially: per-candidate investigators, a synthesis agent, a completeness
-critic, a gap-scan agent, spike design review, cross-track coherence passes, ad-hoc adversarial
+critic, a completeness-scan agent, spike design review, cross-track coherence passes, ad-hoc adversarial
 review, and the user acceptance gate. **This is a strong baseline and the recommendation must
 beat it explicitly** (research plan, "Do nothing structural"). It caught corpus categories C,
 D, E, F and part of A. It missed H, I and K — all three found by the user, on 2026-08-14, by
@@ -461,7 +461,7 @@ the section the validator already locates would have **failed 8 of 8 reports on 
 because the template itself places the `**As of**:` / `**Recommendation**:` metadata block
 *inside* the Summary section and 0090 carries an acceptance blockquote there. And the checkable
 part of "one word for one meaning" is the part no dictionary would have helped with — measured
-2026-08-15, this repo writes **"gap sweep" 38 times and "gap scan" 18 times, and they denote
+2026-08-15, this repo writes **"gap sweep" 38 times and "completeness scan" 18 times, and they denote
 different things** (the Wave 1 post-hoc pass versus the Wave 2 standing in-survey agent), with
 neither defined anywhere.
 
@@ -855,7 +855,7 @@ tracked markdown shows has **exactly one recorded occurrence** in the repo's his
 close-out); one payment cannot fund three recurring controls, and retiring it would also lose
 coverage, since it produced two validator code fixes a prose-consistency pass cannot generate.
 One re-sold the gap-sweep fold-in, which was banked once on 2026-08-14 and then **lapsed**:
-measured 2026-08-15, seven of eight reports mention a gap scan or sweep and **0090 does not** —
+measured 2026-08-15, seven of eight reports mention a completeness scan or sweep and **0090 does not** —
 and 0090 was accepted carrying the candidate-breadth defect the user caught, which became
 D-0022 and minted four tracks. And the survey's only proposal claiming a **negative** step delta
 was refuted, which cascaded four further entries from offset-bearing to unfunded.
@@ -958,7 +958,7 @@ These are defects, not gaps. None needs a checker.
    **inside the entry that founded this track**, and `check-docs.ts` structurally cannot see it.
 2. **The "Constraints in force" header omits D-0008, D-0009, D-0020, D-0025 and D-0027** — see
    ruling (iii).
-3. **"Gap sweep" (38 uses) and "gap scan" (18 uses) denote two genuinely different things and
+3. **"Gap sweep" (38 uses) and "completeness scan" (18 uses) denote two genuinely different things and
    neither is defined anywhere.** One sentence fixes what a glossary plus a preferred-term check
    was proposed to detect — and a blocking check would have pushed authors toward the wrong
    repair.
@@ -988,8 +988,20 @@ that **rung is not a proxy for cost** — which is what this report does.
 
 ### Assumptions declared (D-0004 discipline, applied to rulings rather than app facts)
 
-- **A-1** — "Step" means a mandatory per-track authoring or review action. The ceiling ruling
-  does not define it. All step arithmetic here is contingent on this; see ruling (i).
+- **A-1** — ~~"Step" means a mandatory per-track authoring or review action. The ceiling ruling
+  does not define it. All step arithmetic here is contingent on this; see ruling (i).~~
+  **Superseded 2026-08-17 by D-0029**, which rules that a step is *a logical step in the workflow,
+  or dynamic workflow, that executes a track* — an orchestration stage, not an authoring action.
+  The four shipped items stay ceiling-free under the ruling, so **the recommendation is
+  unaffected**, and the always-loaded-bytes analysis stands unchanged because D-0029 keeps those
+  ceiling-free while requiring them to be priced anyway. What does change for future work: the
+  budgeted object is now **the shape of the workflow that runs a track**, so a proposal is scored
+  by whether it adds an orchestration stage rather than by whether it adds something an author
+  must do. Two consequences this report did not anticipate. The gate-review control at flagged
+  item (a) is squarely ceiling-governed under this reading, since a review pass *is* a stage.
+  And this report's own production — six survey lanes, per-lane verification, a completeness
+  critic, a gap-fill pass, a cost gate, and a synthesis stage — is itself a workflow the ceiling
+  now governs.
 - **A-2** — Acceptance gates stay batched at the observed rate (four events for nine
   acceptances). If gates are taken per track, the human-review denominator returns to 5 and the
   cost table must be re-read.

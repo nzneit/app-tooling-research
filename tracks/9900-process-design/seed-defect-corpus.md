@@ -87,7 +87,7 @@ assumptions, not for whether the search was wide enough.
 
 This is the repo's single best piece of evidence for the value of an adversarial second
 pass, and it is **live, in-repo evidence rather than a claim from the literature**. It is
-also partially self-correcting already: Wave 2 folded gap-scanning in as a standing agent,
+also partially self-correcting already: Wave 2 folded completeness-scanning in as a standing agent,
 and D-0022 converted single-candidate sweep proposals into full multi-candidate tracks.
 
 ## E. Evidentiary precision slips, caught at ratification

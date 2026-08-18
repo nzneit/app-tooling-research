@@ -1,0 +1,36 @@
+name: gates
+
+# Ruled 2026-08-17 (intake 2026-08-15 item g, D-0031): CI runs the EXISTING gate only.
+# It does not introduce any new check, tool, or dependency — its whole purpose is that the
+# checks the repo already has become enforced rather than merely available. Adding a check
+# here is a ceiling decision under D-0029, not a CI-config change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # No install step: the repo root declares no dependencies and the validator is
+      # zero-dependency by design (D-0027 rung 0). If a dependency ever appears here,
+      # that is a rung climb and needs its own decision.
+
+      - name: Validate the document system
+        run: node scripts/check-docs.ts
+
+      # The glob is load-bearing. `node --test scripts/` (directory form) fails on Node 24.x;
+      # see CLAUDE.md. Do not "simplify" this line.
+      - name: Run the validator's tests
+        run: node --test scripts/*.test.ts

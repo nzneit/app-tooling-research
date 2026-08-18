@@ -4,9 +4,22 @@ Append-only ledger. `D-####` IDs are contiguous from D-0001 and never reused; su
 decisions are marked superseded in place, never deleted. Entry format: `### D-####: title`
 followed by `**Date**`, `**What**`, `**Why**`, `**From**`, `**Affects**` lines.
 
-## Constraints in force
+## Start here
 
-D-0001 · D-0002 · D-0003 · D-0004 · D-0005 · D-0006 · D-0007 · D-0011
+A **reading order**, not an enumeration — this list is deliberately partial and always was, so
+never treat absence from it as evidence that a decision does not bind. The ledger below is the
+complete and authoritative set; every `D-####` in it is in force unless its own entry says
+superseded. Read these first because they constrain the most: D-0001 (survey-only depth) ·
+D-0003 (free OSS only) · D-0004 (declare assumptions) · D-0007 (STE summaries) · D-0027
+(the four-rung dependency ladder) · D-0029 (the ceiling's unit).
+
+*Ruled 2026-08-17 (intake item c). This block was previously headed "Constraints in force" and
+listed D-0001 to D-0007 plus D-0011. It read as a complete enumeration and never was one — at the
+commit that created it, it already omitted D-0008 and D-0009 — so it did not go stale, it was
+partial from birth. Relabelling it removes the completeness claim rather than committing the repo
+to maintaining a list that will drift again; the alternative rules considered were "every standing
+constraint" and "program-wide only", both of which recreate the maintenance burden that produced
+the defect.*
 
 ## Ledger
 
@@ -201,3 +214,38 @@ D-0001 · D-0002 · D-0003 · D-0004 · D-0005 · D-0006 · D-0007 · D-0011
 **Why**: User ruling 2026-08-14 on intake item a, which the 9900 track could not decide for itself because it is a constraint boundary rather than a tool comparison. The ladder keeps the zero-dependency identity as the default while refusing to eliminate genuinely irreplaceable tooling on constraint alone — a tool now has to lose on merit, or win by showing in-house replication is impractical.
 **From**: intake/2026-08-14-9900-process-scope.md item a
 **Affects**: 9900 and any future proposal to add tooling anywhere in this repo
+
+### D-0028: Terminology — "gap sweep" and "completeness scan" are different passes
+**Date**: 2026-08-17
+**What**: Two distinct passes get two distinct names, and one word stops doing both jobs. A **gap sweep** is the cross-cutting adversarial pass over a *wave's finished reports* that hunts for falsified claims. A **completeness scan** is the *within-track* check asking which candidates a survey never considered. The term **"gap scan" is retired**; every one of its 22 occurrences across six files was renamed to "completeness scan", including in the two accepted reports (0060, 0070), each of which carries a dated in-place annotation recording the rename so the edit is visible rather than silent. No claim in any document changed.
+**Why**: User ruling 2026-08-17 on intake item f. The two terms appeared 38 and 18 times respectively, denoted genuinely different things, and neither was defined anywhere — so every reader inferred the distinction or missed it. The 9900 report's position, adopted here, is that one sentence of definition fixes this and that a blocking preferred-term validator check would have been actively harmful: it would have pushed authors toward collapsing two real concepts into one word, which is the wrong repair. This is a case where the cheap mechanical control is worse than the free editorial one.
+**From**: intake/2026-08-15-9900-report-rulings.md item f
+**Affects**: all future reports and plans; the 9900 corpus; the two annotated accepted reports
+
+### D-0029: The ceiling's unit — a "step" is a logical workflow step
+**Date**: 2026-08-17
+**What**: Under the **net steps hold** ceiling (intake 2026-08-14 item b), a **step** means *a logical step in the workflow, or dynamic workflow, that executes a track* — an orchestration stage such as investigate, verify, critique, price, or synthesise. It does **not** mean a line of prose, a validator check, or a document someone may read. Consequences: a rung-0 validator check is ceiling-free; a byte added to an always-loaded file is ceiling-free; a new named pass in the execution of a track is ceiling-**governed** and needs an offset. Two things follow that the report did not assume. First, the ceiling now governs **how tracks are run**, not only what authors must do — so the shape of the agent workflow that executes a track is the budgeted object. Second, because always-loaded bytes are ceiling-free but recur on every session of every track forever, they must still be **priced and reported** in the agent-token unit; ceiling-free is not cost-free, and a report that omits that price is incomplete.
+**Why**: User ruling 2026-08-17 on intake item a. The 9900 report assumed a step was "a mandatory per-track authoring or review action" (its assumption A-1) and flagged that its arithmetic was contingent on the definition. The actual intent was neither that reading nor the broader "anything an author or agent must do or read". The report's four shipped items stay free under this reading, so its recommendation is unaffected; what changes is that future proposals are scored against workflow stages rather than authoring actions. **This supersedes assumption A-1 of the 9900 report**, which is annotated in place there.
+**From**: intake/2026-08-15-9900-report-rulings.md item a
+**Affects**: every future control proposal; the 9900 report's step arithmetic; the design of track-executing workflows
+
+### D-0030: Payment classes — a cancelled proposal is not an offset
+**Date**: 2026-08-17
+**What**: Under net steps hold, an offset must retire, merge, or time-box something **that exists**. A **cancelled proposal** — paying by not building something that was never built — is **not** admitted as payment. The two adjacent classes the survey also invoked are constrained with it: a **future rate-limit** (a promise to constrain later additions) is not payment because it retires nothing now, and a **tooling offset** (retiring a candidate never adopted) is not payment for the same reason. An offset names a thing currently in the process and removes it.
+**Why**: User ruling 2026-08-17 on intake item b, confirming the 9900 report's recommendation. The class is unfalsifiable: any control can name a hypothetical it forecloses, so admitting it makes the ceiling unenforceable in principle rather than merely lenient. Nine of the survey's 43 proposed controls paid in one of these three classes, and three separate controls each claimed to be the budget authority for the others — which cannot all be true, and is the symptom this rules out.
+**From**: intake/2026-08-15-9900-report-rulings.md item b
+**Affects**: every future control proposal scored against the ceiling
+
+### D-0031: This repo gets CI, running the existing gate only
+**Date**: 2026-08-17
+**What**: A GitHub Actions workflow (`.github/workflows/ci.yml`) runs the gate this repo already has — `node scripts/check-docs.ts`, then `node --test scripts/*.test.ts` — on pull requests and pushes to `main`. It adds **no new check, tool, or dependency**; there is no install step, because the root declares no dependencies and the validator is zero-dependency by design. Adding any check to this workflow is a ceiling decision under D-0029, not a CI-config change, and the workflow file says so. This settles the question the 9900 plan assigned to the track and the report failed to answer.
+**Why**: User ruling 2026-08-17 on intake item g, choosing shape (ii) of three. The repo is public, so Actions costs nothing here, and the real gap was that the gate was **available but unenforced**: no git hooks are installed, `core.hooksPath` is unset, and `package.json` declares no scripts, so nothing but discipline ran the checks. Shape (ii) closes that without depending on adopting any tool the report skipped. It also makes D-0027's **rung 2** — a binary in CI but never pre-commit — a real option for future tracks rather than a notional one, which was the reason the question mattered. Noted as a cost, not a free win: CI moves cost from contributor wall-clock to pipeline time, a reallocation across the three cost units that all matter, and it adds a place where a check can be silently disabled.
+**From**: intake/2026-08-15-9900-report-rulings.md item g
+**Affects**: every commit and pull request; the availability of D-0027 rung 2 to future tracks
+
+### D-0032: The ledger's opening list is a reading order, not an enumeration
+**Date**: 2026-08-17
+**What**: `DECISIONS.md`'s opening block is retitled from **"Constraints in force"** to **"Start here"** and states explicitly that it is a partial reading order, that absence from it is never evidence a decision does not bind, and that the ledger below is the complete and authoritative set. No membership rule is adopted and no checker is built.
+**Why**: User ruling 2026-08-17 on intake item c (delegated: "I don't have a preference how we handle this"). The block listed D-0001 to D-0007 plus D-0011 and had not been touched since the initial commit, while D-0012 to D-0027 accrued. Verification reframed the defect usefully: at that same initial commit it **already** omitted D-0008 and D-0009, so nothing in it became false over time — an enumeration presented as complete was partial from birth. The two alternative rules considered ("every standing constraint that binds future work" and "program-wide constraints only") both commit the repo to maintaining a list that will drift again, recreating the defect; relabelling removes the completeness claim permanently and costs nothing to maintain. Recorded plainly: this was decided by the agent under an explicit delegation, not by the repo owner.
+**From**: intake/2026-08-15-9900-report-rulings.md item c
+**Affects**: readers of DECISIONS.md; no other document
