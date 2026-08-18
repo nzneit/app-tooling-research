@@ -139,6 +139,18 @@ prompt, no third arm. The supported claim is that *a coverage-forcing enumeratio
 different class of finding than an attention-driven pass* — not that FMEA specifically works.
 "FMEA" here names a prompt shape.
 
+> **2026-08-17 outcome (D-0036).** This entry's split was ratified, and the disposition is finer
+> than "skip". **The apparatus stays refused** on the grounding argument above — Occurrence has no
+> numeric base and Detection rests on one measurement, so an AP table would return false precision
+> — and the licence is recorded as *not* the binding reason, since the seven-step skeleton is free.
+> **The mechanism is adopted**: coverage-forcing enumeration becomes the defined shape of D-0033's
+> machinery lens (enumerate the stages, ask what fails at each, rank a shortlist by severity,
+> preserve the runners-up verbatim). That adds **zero stages**, because the lens already exists, so
+> it is free under D-0035's ceiling. Process FMEA remains skipped **as a ratified per-track
+> control**, which is what this report recommended and what the Summary says. Deferred rather than
+> dropped: the one-off lifecycle FMEA this entry calls adequate, which is also the third arm the
+> spike list below asks for.
+
 **Integration cost: adequate as a one-off, weak as a standing control.** A machinery-directed
 pass is roughly two orders of magnitude cheaper in tokens than an output-directed one
 (`CLAUDE.md` at 2,422 bytes plus two templates at ~2.2 KB, against a mean accepted report of
