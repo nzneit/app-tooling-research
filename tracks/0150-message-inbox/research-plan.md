@@ -219,6 +219,14 @@ subscription name when `!isCleanSession()`, so no durable subscription is create
 reconnect with the same clientId under `clean: true` also *deletes* durable subs left from the
 `clean: false` era. QoS 1 still gives at-least-once for the life of the connection.
 
+**But it reclaims nothing already leaked, and that needs saying plainly.** `deleteDurableSubs`
+operates only on `lookupSubscription(clientId)` — the subs belonging to the clientId connecting
+right now. With a unique clientId per tab, a new tab under `clean: true` never sees, let alone
+deletes, the orphans left by tabs that are already gone. So remediation is **two** changes, not
+one: `clean: true` (or a user-scoped clientId) stops new leakage at the source, and
+`offlineDurableSubscriberTimeout` — or a JMX sweep — is the only thing that reclaims the
+existing backlog. Doing either alone leaves the problem half-solved.
+
 But that removes what made this track live. Under `clean: true` there is no offline queueing and
 no cross-reload redelivery — the original null hypothesis returns, and the durable half of the
 inbox has no traffic to act on. What survives is narrower and still real: **the acknowledged-
@@ -302,7 +310,62 @@ because link stealing is enabled.
      closed tab cleans up immediately — but [MQTT-3.1.2-8] means any configured will is published
      on every close and refresh, not only on genuine failures. Check whether a will is set.
 
-  Also worth adopting regardless of the link-stealing decision: **`reconnectOnConnackError: true`**
+- **Assessed and not recommended: disconnecting explicitly on page hide.** Proposed 2026-08-18
+  and verified against source; the proposer's own instinct ("an optimization that works only some
+  of the time") is right, and the reason is structural rather than statistical.
+  - **It does nothing for the storage liability.** An MQTT DISCONNECT does not remove, expire, or
+    reduce a durable subscription — ActiveMQ's `onMQTTDisconnect` sends a `RemoveInfo` for the
+    *connection* plus a `ShutdownInfo` and never constructs a `RemoveSubscriptionInfo`. The
+    session surviving a disconnect is the entire point of `clean: false`.
+  - **It is mildly counterproductive.** Queueing begins the instant the subscription deactivates
+    (`offlineTimestamp` is stamped immediately, and `keepDurableSubsActive` defaults true so the
+    sub keeps matching), so disconnecting deliberately opens the accrual window sooner and more
+    often. Subscription count unchanged; queued volume up.
+  - **Its addressable set is empty for the ghost problem.** Split terminations by whether the
+    socket closes. Process death — crash, OOM, tab discard, force-quit — closes it at the OS
+    level, so ActiveMQ sees the close and releases the clientId promptly with or without a
+    handler. The cases that leave a half-open socket and the 45–60 s ghost — network partition,
+    sleep, power loss — are by definition cases where no JavaScript runs. **The handler fires
+    only where things were already clean, and never where they are dirty.**
+  - **The browser already closes the socket cleanly.** The WebSockets standard requires the user
+    agent to start a 1001 closing handshake when the document goes away, which is exactly what
+    drives ActiveMQ's synthesised DISCONNECT.
+  - **`client.end()` cannot drain the inbox.** Its only wait condition is on `outgoing` —
+    client-originated publishes — while the deferred-PUBACK pattern lives entirely in the
+    *incoming* path, which `end()` cannot see. Worse, when outgoing publishes are pending it
+    registers `once('outgoingEmpty', setTimeout(finish, 10))`, an event plus a macrotask that
+    will not run before unload — so the DISCONNECT is silently skipped exactly when the app is
+    busiest. Any implementation must use `end(true)`. And a PUBACK resolving after `end()` is
+    stored offline and never sent, so the broker redelivers on reconnect: the proposal *increases*
+    duplicate delivery, which the inbox absorbs but should expect.
+  - **Nothing async can complete in the handler anyway.** Chrome's Page Lifecycle documentation
+    is explicit that freezable tasks are suspended in the frozen and terminated states, so
+    callback-based APIs — IndexedDB included — cannot be relied on there.
+
+  **Two narrow reasons it might still be worth doing**, both judged on their own merits rather
+  than as broker fixes. First, **will suppression**, which is a live bug if a will is configured:
+  `MQTTSocket.onWebSocketClose` tests a `receivedDisconnect` flag set only by a real DISCONNECT
+  frame, so on an ordinary tab close it calls `onTransportError()` — **publishing the will** —
+  *before* synthesising the DISCONNECT. An explicit DISCONNECT suppresses it ([MQTT-3.14.4-3]).
+  Second, **bfcache eligibility on Firefox**, where an open WebSocket is understood to block it;
+  `pagehide` + reconnect on `pageshow` is the documented pattern. That is a navigation-performance
+  benefit with nothing to do with the broker, and it may be moot if the inbox's own IndexedDB
+  connection forfeits bfcache regardless — which the report should check.
+
+  **If it is implemented**: bind to `pagehide`, never `visibilitychange` (which fires on every
+  tab switch, minimise and screen lock, and would rebuild ~40 subscriptions each time) and never
+  `unload` (a hard bfcache blocker in both engines). Note also that `freeze`/`resume` — Chromium
+  only — targets the one mechanism that actually kills a hidden tab's connection, since Chrome
+  133+ freezes hidden-and-silent tab groups after five minutes under Energy Saver.
+- **Recorded because it changes the background-tab picture**: Chromium's intensive timer
+  throttling does apply here — an open WebSocket is *not* on the exemption list, confirmed in
+  Blink source where `WebSocketChannelImpl` registers only `DisableBackForwardCache()` and
+  pointedly not `DisableAggressiveThrottling()`. So a 30 s keepalive in a tab hidden beyond five
+  minutes is serviced at ~60 s and exceeds ActiveMQ's 45 s threshold. The failure is asymmetric
+  and therefore confusing to diagnose: **inbound WebSocket delivery is not throttled** (its task
+  queue is explicitly unthrottled), so the tab keeps receiving messages at full speed right up
+  until the broker times it out for not pinging.
+- Also worth adopting regardless of the link-stealing decision: **`reconnectOnConnackError: true`**
   (present since mqtt.js 5.10.3, absent from `defaultConnectOptions`, so currently falsy). Without
   it, recovery from any refused CONNACK depends on the broker closing the socket rather than on
   the client. It costs nothing when connections are accepted.
