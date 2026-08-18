@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** 9900 accepted (D-0037) — the validator now checks `CLAUDE.md` and `docs/`, masks inline code spans, and the gate review is written down at `.claude/skills/gate-review/`. Next: the user's go gate on five drafted plans — 0100 (revised), 0110–0140. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), the D-0019 ordering stamp with the contract owners, and two passes deferred rather than dropped — the one-off lifecycle FMEA (D-0036) and the citation staleness sweep (D-0034).
+> **Frontier:** 0150-message-inbox chartered (D-0038) — plan drafted, and its intake items a–d gate the survey: if MQTT sessions are `clean: true` as 0060 assumed, there is no cross-reload redelivery and the verdict is skip. Next: the user's go gate on six drafted plans — 0100 (revised), 0110–0150 — plus the 0150 rubric ruling D-0023 requires. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), the D-0019 ordering stamp with the contract owners, and two passes deferred rather than dropped — the one-off lifecycle FMEA (D-0036) and the citation staleness sweep (D-0034).
 
 ## How it works
 
@@ -48,4 +48,5 @@ in `findings.md` — the durable artifact.
 | 0120-e2e-testing | End-to-end browser testing of the live MQTT-over-WSS and reason-code REST flows (D-0022) | planned |
 | 0130-accessibility-linting | Static + automated accessibility checking for the React UI (D-0022) | planned |
 | 0140-supply-chain | Dependency vulnerability and supply-chain auditing (D-0022) | planned |
+| 0150-message-inbox | Durable inbox pattern for selected inbound MQTT streams, over IndexedDB transactions (D-0038) | planned |
 | 9900-process-design | **Meta:** improve this repo's own templates, scripts, and process conventions (D-0025) | accepted |
