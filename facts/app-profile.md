@@ -128,8 +128,14 @@ Node version, package manager, the whole Contracts section, test framework, and 
   whenever the `ActiveMQ.MQTT.QoS` property is absent — i.e. for every message from an
   OpenWire/JMS, STOMP, AMQP or Camel producer. Such messages reach the browser at **QoS 0**:
   no PUBACK, no durable subscription, no offline retention. This is **AMQ-7045**, open since
-  2018, unchanged in 6.3.1. Whether track 0150 is viable therefore depends on who publishes to
-  its 6 topics. Other consequences carried into that track: durable subscriptions exist only
+  2018, unchanged in 6.3.1. **Resolved 2026-08-18 (user): the 6 durable-path topics are fed by
+  MQTT clients**, so the inverted branch — reached only when `ActiveMQ.MQTT.QoS` is absent — is
+  never taken for them, and track 0150 is viable. The defect still governs any topic added to
+  that policy row later from a JMS service. The residual is that the property carries the
+  *publisher's* QoS: a QoS-0 MQTT publish becomes a `NON_PERSISTENT` JMS message, unstored for
+  offline durable subscribers and delivered at QoS 0 whatever the browser subscribed at — the
+  same failure mode from an upstream, correctable cause. Producer publish QoS is now the gating
+  fact (intake item b). Other consequences carried into that track: durable subscriptions exist only
   for QoS ≥ 1, so **QoS-0 subscriptions are not restored on reconnect and `resubscribe: true`
   is required** (this corrects an earlier note in 0060's annotation); the shipped
   `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable subscribers,
@@ -143,8 +149,8 @@ Node version, package manager, the whole Contracts section, test framework, and 
   subscriptions accrete forever and a full store **blocks every publisher indefinitely**; and
   every subscription is created `retroactive(true)`, so a new clientId inherits the undrained
   backlog of every abandoned one (likely mechanism of **AMQ-9592**, open — a confidentiality
-  concern if topics are user-scoped). **Still unanswered**: the producer technology on the 6
-  topics, *which* 6 topics, whether their effects are idempotent, payload size, and the ActiveMQ
+  concern if topics are user-scoped). **Still unanswered**: the producers' publish QoS, *which* 6
+  topics, whether their effects are idempotent, payload size, and the ActiveMQ
   version (CVE floor 6.2.4+ / 5.19.2+ — a `wss://` connector is exposed despite the advisory
   wording) — intake 2026-08-17-0150 items b and h.
 - Connector setting: **`allowLinkStealing` is enabled on the `wss` connector** (2026-08-18,

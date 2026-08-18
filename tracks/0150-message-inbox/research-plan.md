@@ -120,22 +120,39 @@ and Apache JIRA and then put to an adversarial refuter, which overturned two of 
 were checked against release tag `activemq-6.3.1`, not only `main` (an unreleased
 `6.4.0-SNAPSHOT`); the report re-pins citations to whichever tag the operator actually runs.
 
-### The premise question: who publishes to those 6 topics?
+### The premise question: answered — the producers are MQTT clients
 
-**This is now the first thing the track must establish, because one answer makes the whole
-design decorative.** `MQTTProtocolConverter` derives a delivered message's QoS from the JMS
-persistence flag with the ternary **inverted** —
-`qoS = message.isPersistent() ? QoS.AT_MOST_ONCE : QoS.AT_LEAST_ONCE` — and that line is
-reached whenever the JMS property `ActiveMQ.MQTT.QoS` is absent, which is the case for every
-message originating from an OpenWire/JMS, STOMP, AMQP, or Camel producer. So if the publishers
-on those 6 topics are not themselves MQTT clients — the normal case in a shop running Classic —
-their messages arrive at the browser **at QoS 0**: no PUBACK exists to defer, the subscription
-is not durable, nothing is retained while offline, and the inbox degrades to fire-and-forget
-with permanent loss on a tab crash. This is **AMQ-7045**, open since 2018 with no fix version
-and unchanged in 6.3.1. Establish the producer technology for those 6 topics before any other
-work in this track.
+**Answered 2026-08-18 (user): the 6 topics are fed by MQTT clients.** This clears the
+existential risk the section below was written around, and the track is viable on its own terms.
+The hazard was **AMQ-7045**: `MQTTProtocolConverter` derives a delivered message's QoS from the
+JMS persistence flag with the ternary **inverted** —
+`qoS = message.isPersistent() ? QoS.AT_MOST_ONCE : QoS.AT_LEAST_ONCE` — and that line is reached
+only when the JMS property `ActiveMQ.MQTT.QoS` is **absent**, which is the case for every message
+originating from an OpenWire/JMS, STOMP, AMQP, or Camel producer. An inbound MQTT PUBLISH goes
+through the converter, which sets that property, so the inverted branch is never taken for these
+topics. AMQ-7045 remains open and unfixed in 6.3.1; it simply does not sit on this path. The
+original question and the reasoning are kept above rather than deleted, because the finding
+still governs any *future* topic sourced from a JMS service — including one added later to this
+same policy row.
 
-### What holds if the producers are MQTT clients
+**The residual, and it is the new first question.** The `ActiveMQ.MQTT.QoS` property carries the
+**publisher's** QoS, so it moves the hazard one hop upstream rather than removing it: an MQTT
+producer publishing at **QoS 0** yields a `NON_PERSISTENT` JMS message, which is not written to
+the store for an offline durable subscriber and is delivered at QoS 0 regardless of what the
+browser subscribed at. The failure mode is then identical to AMQ-7045's — nothing to acknowledge,
+nothing retained — but the cause is a client-side knob rather than a decade-old broker defect,
+which makes it correctable if the answer is wrong. **At what QoS do those producers publish?** is
+now the gating fact, and it is intake item b. This is a source-level inference from the same
+converter reading; confirm it empirically alongside the delivered-QoS check rather than treating
+it as settled.
+
+One adjacent consequence worth carrying: `canOptimizeOutPersistence()` lets the broker skip the
+store entirely for a persistent publish to a topic with **no durable subscribers**. Until the
+first client has subscribed durably, a QoS-1 publish to one of these 6 topics is not retained by
+anyone. That is a cold-start property of provisioning, not of steady state, and it belongs with
+the `retroactive(true)` provisioning question below.
+
+### What holds, now that the producers are MQTT clients
 
 - **Durability is per-subscription and QoS-gated.** A durable JMS subscription is created only
   when `cleanSession=false` **and** clientId is non-null **and** requested QoS ≥ 1. So the 6
@@ -794,13 +811,13 @@ standing gaps in `facts/app-profile.md` (the whole Contracts section; reconnect 
 which the session mode makes more consequential than it was). The four that now gate the
 survey rather than colour it:
 
-- **Who publishes to the 6 topics — MQTT clients, or JMS/OpenWire/STOMP/AMQP/Camel producers?**
-  (item b) — **the premise question, ahead of everything else.** ActiveMQ Classic inverts the
-  JMS-persistence-to-QoS mapping (AMQ-7045, open since 2018), so messages from a non-MQTT
-  producer reach the browser at QoS 0: no acknowledgement to defer, no durable subscription, no
-  offline retention. If the producers are JMS services — the normal case in a Classic shop —
-  this track's design is decorative for those topics and the report must say so rather than
-  specify a mechanism that cannot engage.
+- ~~Who publishes to the 6 topics?~~ **Answered 2026-08-18: MQTT clients.** AMQ-7045 does not
+  sit on this path, and the track is viable. **Replaced by its residual, which now leads:
+  at what QoS do those producers publish?** (item b). A QoS-0 publish becomes a
+  `NON_PERSISTENT` JMS message — not stored for an offline durable subscriber, and delivered at
+  QoS 0 whatever the browser subscribed at. Same failure mode as AMQ-7045, upstream cause,
+  correctable. If the answer is QoS 0 the report must say the mechanism cannot engage rather
+  than specify one that never fires.
 - **Which topics get the durable path, and what share of the ~50 msg/s do they carry?** (item
   b) — the selection rule that goes on the policy row, the rate every cost estimate is built
   on, and paired with "are their effects idempotent?" it decides how much of the design is
