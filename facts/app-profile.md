@@ -143,12 +143,24 @@ Node version, package manager, the whole Contracts section, test framework, and 
   subscriptions accrete forever and a full store **blocks every publisher indefinitely**; and
   every subscription is created `retroactive(true)`, so a new clientId inherits the undrained
   backlog of every abandoned one (likely mechanism of **AMQ-9592**, open — a confidentiality
-  concern if topics are user-scoped). Over WSS, `allowLinkStealing` defaults false and the
-  WebSocket factories never set it, so a duplicate clientId is **rejected** (CONNACK 0x02)
-  rather than stealing the link. **Still unanswered**: the producer technology on the 6 topics,
-  *which* 6 topics, whether their effects are idempotent, payload size, the ActiveMQ version
-  (CVE floor 6.2.4+ / 5.19.2+ — a `wss://` connector is exposed despite the advisory wording),
-  and the connector URI — intake 2026-08-17-0150 items b and h.
+  concern if topics are user-scoped). **Still unanswered**: the producer technology on the 6
+  topics, *which* 6 topics, whether their effects are idempotent, payload size, and the ActiveMQ
+  version (CVE floor 6.2.4+ / 5.19.2+ — a `wss://` connector is exposed despite the advisory
+  wording) — intake 2026-08-17-0150 items b and h.
+- Connector setting: **`allowLinkStealing` is enabled on the `wss` connector** (2026-08-18,
+  user). This overrides ActiveMQ's own behaviour, where the flag defaults false and the
+  WebSocket transport factories never set it — so the code default is to *reject* a duplicate
+  clientId with CONNACK 0x02, while this deployment *steals the link*: a second connection
+  presenting the same clientId disconnects the first. Combined with mqtt.js's 1000 ms
+  `reconnectPeriod`, a clientId shared across browser tabs produces a **steal war** — each tab
+  reconnects and steals back — and every steal calls `DurableTopicSubscription.deactivate()`,
+  returning unacknowledged messages to pending in producer order, resubscribing the QoS-0 topics
+  and re-triggering retained delivery. 0060's boundary caps reconnection at `maxAttempts`
+  (default 10) with exponential backoff before declaring `degraded`, so the **predicted
+  observable symptom is both tabs going `degraded` and silently stopping**, not indefinite
+  flapping. Whether this is live depends on the still-open question of whether the persisted
+  clientId is shared across tabs or per-tab (intake 2026-08-17-0150 item f). If shared, it is a
+  production defect independent of track 0150, and the prediction above is falsifiable today.
 
 ## Environment
 - CI provider: **GitHub Actions on GitHub Enterprise Cloud**, application repo is

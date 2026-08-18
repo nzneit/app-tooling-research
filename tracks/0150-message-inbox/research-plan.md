@@ -185,14 +185,13 @@ work in this track.
 
 ### Smaller, but each changes code
 
-- **Duplicate clientId over WSS is *rejected*, not stolen.** `allowLinkStealing` defaults false
-  and the WebSocket transport factories — unlike the four MQTT TCP factories — never set it. So
-  a second tab presenting the same persisted clientId gets CONNACK 0x02 and its socket closed;
-  the first tab is untouched. **This corrects this plan's earlier claim that tabs would evict
-  each other in a loop** — they do not, on this transport. The second tab simply fails, which
-  is a different bug with the same verdict: multi-tab does not work today. Note the remedy is
-  booby-trapped — `setAllowLinkStealing()` on `<transportConnector>` writes a field nothing
-  reads; it only takes effect inside the URI query string.
+- **Duplicate clientId over WSS *steals the link*, because this deployment enables it.**
+  `allowLinkStealing` defaults false and the WebSocket factories never set it — unlike the four
+  MQTT TCP factories — but the operator has enabled it on the `wss` connector (user,
+  2026-08-18). The code default is *reject*; the configured behaviour is *steal*, and only the
+  configured behaviour matters. A second connection presenting the same clientId disconnects
+  the first. Whether that is a live defect depends entirely on the clientId's tab scope, which
+  is still unanswered — see question 11.
 - **No poison-message escape.** With no redelivery policy on the MQTT path and no DLQ routing,
   a message the browser can never commit is redelivered on every reconnect forever and wedges
   that subscription's progress. The inbox needs its own give-up-and-acknowledge rule.
@@ -350,22 +349,34 @@ work in this track.
     a schema change invalidates silently? Include the mixed-version deploy: two tabs on
     different app versions share one origin database and one `versionchange` event, which
     blocks until every other connection closes.
-11. **Multi-tab: who owns the session, and who owns the inbox?** Two questions now, and the
-    first is a live defect rather than a design choice — but not the one this plan first
-    described. [MQTT-3.1.4-2] requires a broker to disconnect the existing client, and native
-    brokers do; **ActiveMQ Classic over WSS does not**, because `allowLinkStealing` defaults
-    false and the WebSocket factories never set it. So with a *shared* persisted clientId the
-    second tab is refused with CONNACK 0x02 and the first keeps running — tabs do not evict
-    each other in a loop, the later tab is simply dead. With a *per-tab* clientId the opposite
-    and worse thing happens: every tab ever closed leaves a durable subscription that is never
-    reaped and accretes forever toward the store limit that blocks all publishers. Both are
-    unacceptable; which one is live is intake item f. Second,
-    tabs share one IndexedDB but hold independent connections, so one logical message can
-    arrive twice into one shared store: Web Locks (crash-safe handoff, no lease or heartbeat,
-    FIFO per resource) or BroadcastChannel? 0060 dismissed coordination on assumption A-13 and
-    flagged it as reopening if tabs share a connection; durable storage is cross-tab by
-    construction, so this track reopens it regardless. Note both an open IndexedDB connection
-    and a held Web Lock forfeit back/forward-cache eligibility.
+11. **Multi-tab: who owns the connection, and who owns the inbox? — and one branch is a live
+    defect today.** `allowLinkStealing` is **enabled** on this deployment's `wss` connector
+    (user, 2026-08-18), overriding ActiveMQ's own default of rejecting a duplicate clientId.
+    That makes the clientId's tab scope (intake item f) decisive, and both answers are bad:
+    - **Shared across tabs → a steal war.** Tab B connects, the broker disconnects tab A, and
+      mqtt.js reconnects A after `reconnectPeriod` (1000 ms default), which steals back from B,
+      which reconnects and steals from A. Each steal calls
+      `DurableTopicSubscription.deactivate()`, returning dispatched-but-unacknowledged messages
+      to pending in producer order — so every cycle replays up to prefetch-worth of messages
+      per subscription, resubscribes the 34 QoS-0 topics, and re-triggers retained delivery.
+      With deferred acknowledgement the in-flight window *is* the replay set, so the churn lands
+      squarely on the inbox. **A concrete, checkable prediction**: 0060's boundary caps
+      reconnection at `maxAttempts` (default 10) with exponential backoff before declaring
+      `degraded`, so the observable symptom is not endless flapping but **both tabs going
+      `degraded` and silently stopping**. If anyone has reported a second tab killing the first,
+      or the app going dead after opening two windows, this is the mechanism, and it exists
+      independently of this track.
+    - **Per-tab → unbounded broker liability.** No stealing, but every tab ever closed leaves a
+      durable subscription that is never reaped, accreting toward the store limit that blocks
+      all publishers.
+    **Single-connection leader election is therefore not an optimization here, it is the repair
+    for whichever branch is live**, and the report should treat it that way: one elected tab
+    owns the MQTT connection *and* the IndexedDB writes; the others observe. Web Locks is the
+    natural primitive — crash-safe handoff, no lease or heartbeat, FIFO per resource — with
+    BroadcastChannel for change notification, since IndexedDB has no native change events.
+    0060 dismissed coordination on assumption A-13 and flagged it as reopening if tabs share a
+    connection; this is that trigger. Note both an open IndexedDB connection and a held Web
+    Lock forfeit back/forward-cache eligibility.
 12. **Retention, compaction, reset, and poison recovery.** An earlier draft of this plan
     reasoned that the retention window is **derivable** from the broker's session-expiry
     interval, since the broker never redelivers beyond it. **That does not hold here**: MQTT
