@@ -143,6 +143,18 @@ contradict the new one, the way `DECISIONS.md` handles a superseded entry.
 
 2026-08-17 update — I don't have a preference how we handle this.
 
+2026-08-17 update (agent, deciding under that delegation) — **Granted, and it turns out not to
+need an exception at all.** Recorded as **D-0033**. Under D-0029 a review pass is a workflow
+stage, so it is ceiling-governed — which means it needs an *offset*, and one exists: the wave
+close-out whole-branch review is retired and absorbed. Net stage change is **zero**. The report
+cut this control for naming no offset; the offset was there once the pass being replaced was
+named correctly. Coverage is preserved by requiring the named stage to carry a **machinery lens**
+alongside the falsification lens, since the retired pass produced two validator code fixes a
+claims-only review could not generate. New evidence since the report: the 2026-08-15 adversarial
+review of the 9900 draft returned six blockers against an artifact that had already passed
+per-lane verification and a completeness critic. Warrant stated plainly in the entry — the rule
+wanted an independent reviewer, and what it got was the owner's delegation.
+
 ## e — reviewed exception? The immutable-ref citation rule (flagged cut)
 
 The only control in the survey whose value **outlives the program**. Measured 2026-08-15 across
