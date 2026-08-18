@@ -1,7 +1,14 @@
 # 2026-08-15: 9900 report rulings (intake)
 
-**Status**: open
+**Status**: resolved
 **Owner**: user (repo owner — these are rulings about this repo and its ceiling, not app facts)
+
+**Resolved 2026-08-17.** All seven items answered by the repo owner on 2026-08-17; items c, d
+and e were delegated to the agent and decided on stated evidence, which the entries record
+explicitly. Allocated: **D-0028** (terminology), **D-0029** (the ceiling's unit), **D-0030**
+(payment classes), **D-0031** (CI), **D-0032** (the ledger's opening list), **D-0033** (the gate
+review as a named stage, net zero), **D-0034** (citation pinning). The 9900 report's assumption
+A-1 is superseded in place by D-0029; its cut of the gate review is superseded by D-0033.
 
 Track 9900's survey is complete and its report is drafted
 ([report.md](../tracks/9900-process-design/report.md)). Seven items need the repo owner before
@@ -193,6 +200,21 @@ open that has since been answered — mark it superseded in place rather than le
 contradict the new one, the way `DECISIONS.md` handles a superseded entry.
 
 2026-08-17 update — I don't have a preference how we handle this.
+
+2026-08-17 update (agent, deciding under that delegation, after running the experiment) —
+**The experiment was run rather than the question guessed.** Ten unique mutable-ref citations,
+sampled systematically from the 94 across six accepted reports, fetched 2026-08-17. Result:
+**10/10 resolve, 9 still support their claim, 1 drifted, 0 broke.** Recorded as **D-0034**, which
+**refuses the control as scoped and adopts a narrower convention instead**, for three reasons the
+headline hides. (1) The proposed GitHub-scoped regex would have caught **zero of ten** — all four
+GitHub citations passed and the one failure was an npm `/latest` endpoint, outside its scope.
+(2) The four-day horizon makes this a **floor, not a rate**, and the pre-registered falsifier was
+written without a horizon; three of the nine passes are structurally uninformative (an archived
+repo, and two packages silent for five and twenty-three months), leaving an effective sample of
+about four, of which one decayed. (3) The real failure class is **a printed fact copied out of a
+mutable endpoint into prose** — 0010's `typebox (1.3.13)`, now 1.3.15 — which is cheaper to fix
+than the class proposed. The GitHub half stays open behind a named one-call-per-citation staleness
+sweep. This item is resolved; the residual question is recorded in D-0034 rather than left here.
 
 ## f — "gap sweep" versus "completeness scan": which is which?
 

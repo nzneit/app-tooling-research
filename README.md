@@ -8,7 +8,7 @@ JSON bodies, vendored AsyncAPI/OpenAPI contracts, oxlint).
 · **Decisions:** [DECISIONS.md](DECISIONS.md)
 · **App facts:** [facts/app-profile.md](facts/app-profile.md)
 
-> **Frontier:** the meta track 9900 (D-0025) has a drafted report awaiting acceptance — it recommends **build, at rung 0, and change less than we could**: two `check-docs.ts` changes, one ratified do-not-build, one write-down of existing practice, and every external tool skipped. Six items gate acceptance (intake 2026-08-15): three ceiling rulings and two cut controls flagged for a reviewed exception. Five plans still await the user's go gate: 0100 (revised), 0110–0140. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), and the D-0019 ordering stamp with the contract owners.
+> **Frontier:** the meta track 9900 (D-0025) has a drafted report and **all seven gating rulings are resolved** (D-0028 to D-0034, 2026-08-17) — the report now awaits only the user's acceptance decision. It recommends **build, at rung 0, and change less than we could**; D-0029 redefined the ceiling's unit as a logical workflow step, D-0033 restored the gate review as a named stage at net-zero cost, and D-0031 put the existing gate into CI. Five plans still await the user's go gate: 0100 (revised), 0110–0140. Open elsewhere: the build-tool fact (intake 0090 item a), the 0100 agentic-churn intake, the D-0003 boundary on already-licensed tools (intake supply-chain item d), and the D-0019 ordering stamp with the contract owners.
 
 ## How it works
 
