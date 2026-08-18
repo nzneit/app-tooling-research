@@ -158,10 +158,14 @@ Node version, package manager, the whole Contracts section, test framework, and 
   number)**, so every 6-based sizing figure is a floor. **Sized the same day: roughly 75% of the
   other ~34 are QoS 1** — about 26 incidental durable subscriptions on top of the 6 intended, so
   ~32 per device carrying ~39 msg/s if rate tracks topic count. The unintended durable path is
-  roughly **eight times** the intended one. *Which* of them need offline retention at all is
-  intake 2026-08-17-0150 item b, and it is the input a demotion audit needs.
+  roughly **eight times** the intended one. **How many genuinely need offline retention is not
+  known** (user, 2026-08-18: expects none, offered to assume all). D-0039 rules **size for all,
+  design for none**, and reframes the question into one that can be answered by reading the
+  handler: *is the effect accumulating or replacing?* Only accumulating effects need offline
+  retention; replacing effects get the current value from the first message after reconnect.
 - **The broker may not stay ActiveMQ Classic** (2026-08-18, user): a decent chance of swapping to
-  **Eclipse Mosquitto**. Every ActiveMQ-specific finding above is therefore time-limited, and
+  **Eclipse Mosquitto**, on a **3-to-6-month horizon** — inside the service life of anything
+  designed now, so 0150 designs for both brokers (D-0039). Every ActiveMQ-specific finding above is therefore time-limited, and
   several *invert* rather than lapse. The decisive one is retention: ActiveMQ durable
   subscriptions never drop, while Mosquitto defaults to `max_queued_messages` **1000 per client,
   dropping newest** — about **26 seconds** of offline backlog at ~39 msg/s, or ~3 minutes even

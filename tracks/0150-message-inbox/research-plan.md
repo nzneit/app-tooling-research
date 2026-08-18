@@ -247,6 +247,18 @@ the `retroactive(true)` provisioning question below.
 message rate tracks topic count, which is a guess and is the first thing the survey should
 replace with a measurement — but the order of magnitude is what matters and it is not close.
 
+**How many of them genuinely need offline retention is not known**, and D-0039 rules the
+planning posture: **size for all, design for none.** Sizing for all is safe and costs only
+arithmetic — it is what makes the table below the planning figures rather than the 6-topic
+numbers they replace. Designing for all is *not* safe: it builds machinery for a case the person
+closest to the app expects does not exist, and it forecloses the demotion audit, which is the
+cheapest remedy available. The report treats "probably none" as a hypothesis with a named test,
+never as a fact. **The test**: "does this topic need offline retention?" is unanswerable from
+memory, but it reduces to "**is this topic's effect accumulating or replacing?**" — a replacing
+effect needs none, because the first message after reconnect carries the current value; only an
+accumulating effect does. That is the same idempotence question this plan already asks of the 6,
+and against the other ~26 it is a code-reading task rather than a recall task.
+
 | | topics | rate | durable subs per device |
 |---|---|---|---|
 | inbox path (intended) | ~6 | ~5 msg/s | 6 |
@@ -537,9 +549,12 @@ unavailable, not as the leading option.
 
 ## The broker may not stay ActiveMQ, which demotes most of the section above
 
-**There is a decent chance of a swap to Eclipse Mosquitto** (user, 2026-08-18). That is not a
-footnote on the ActiveMQ findings — it is a statement about their **shelf life**, and it should
-change how this plan is written rather than being appended to it. Nearly everything above is
+**There is a decent chance of a swap to Eclipse Mosquitto, on a 3-to-6-month horizon** (user,
+2026-08-18). That horizon is inside the service life of anything designed now, so question 19's
+premise is **settled affirmative** (D-0039): the report designs for both brokers, and
+ActiveMQ-specific behaviour may not appear as a design assumption anywhere in the deliverable.
+The swap is not a footnote on the ActiveMQ findings — it is a statement about their **shelf
+life**, and it should change how this plan is written rather than being appended to it. Nearly everything above is
 ActiveMQ implementation behaviour, not MQTT semantics: AMQ-7045 and the inverted persistence
 ternary, `(clientId, "<QoS>:<topic>")` subscription keying, `offlineDurableSubscriberTimeout` and
 its never-constructed reaper, `retroactive(true)`, prefetch 100 per subscription,
