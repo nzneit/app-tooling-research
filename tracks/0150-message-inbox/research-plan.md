@@ -135,16 +135,61 @@ original question and the reasoning are kept above rather than deleted, because 
 still governs any *future* topic sourced from a JMS service — including one added later to this
 same policy row.
 
-**The residual, and it is the new first question.** The `ActiveMQ.MQTT.QoS` property carries the
-**publisher's** QoS, so it moves the hazard one hop upstream rather than removing it: an MQTT
-producer publishing at **QoS 0** yields a `NON_PERSISTENT` JMS message, which is not written to
-the store for an offline durable subscriber and is delivered at QoS 0 regardless of what the
-browser subscribed at. The failure mode is then identical to AMQ-7045's — nothing to acknowledge,
-nothing retained — but the cause is a client-side knob rather than a decade-old broker defect,
-which makes it correctable if the answer is wrong. **At what QoS do those producers publish?** is
-now the gating fact, and it is intake item b. This is a source-level inference from the same
-converter reading; confirm it empirically alongside the delivered-QoS check rather than treating
-it as settled.
+**The residual.** The `ActiveMQ.MQTT.QoS` property carries the **publisher's** QoS, so it moves
+the hazard one hop upstream rather than removing it: an MQTT producer publishing at **QoS 0**
+yields a `NON_PERSISTENT` JMS message, which is not written to the store for an offline durable
+subscriber and is delivered at QoS 0 regardless of what the browser subscribed at. The failure
+mode is then identical to AMQ-7045's — nothing to acknowledge, nothing retained — but the cause
+is a knob rather than a decade-old broker defect. This is a source-level inference from the same
+converter reading; confirm it empirically alongside the delivered-QoS check.
+
+### The answer is conditional and revocable, so the design must treat it that way
+
+**Two facts supplied 2026-08-18 change the status of everything above from a settled premise to a
+runtime property.** First, **some of the candidate subscriptions are QoS 0** — so the durable
+path does not cover all 6 topics as drafted. Second, **one or more producers may drop MQTT
+support in future**, at which point their messages take the AMQ-7045 path after all.
+
+The second fact is the serious one, because **the degradation is silent**. A producer that
+migrates to JMS, AMQP, STOMP or Camel does not break the connection, the subscription, or the
+message flow. SUBSCRIBE still succeeds at QoS 1. The durable JMS subscription still exists — it
+is created from the **requested** QoS, which has not changed. Messages still arrive and still
+decode. What stops is retention while the tab is closed, and what disappears is the PUBACK there
+was to defer. An inbox on that topic keeps deduplicating and quietly stops preventing loss, and
+nothing anywhere reports it. That is the worst failure shape available: a guarantee that lapses
+without an error.
+
+**Two consequences for this track.**
+
+- **The value splits into two guarantees with different owners, and the design must not let one
+  take the other down with it.** *Guarantee A, client-owned and permanent*: the effect and its
+  identity record commit in one IndexedDB transaction, so a crash between applying and recording
+  cannot double-apply. This holds at any QoS, under any producer technology, forever — no
+  upstream party can revoke it, and it still earns its keep against retained-message replay
+  ([MQTT-3.3.1-6]) and overlapping-filter duplicates (§3.3.5). *Guarantee B, broker-dependent and
+  revocable*: messages published while the tab is closed are retained and redelivered. This needs
+  QoS ≥ 1 end to end and dies with a producer migration. The report should state which guarantee
+  each recommendation buys, and a design that becomes incoherent when B lapses is the wrong
+  design.
+- **Delivered QoS must be asserted at runtime, not assumed at design time.** mqtt.js surfaces
+  `packet.qos` on every incoming message, so the boundary can compare delivered QoS against the
+  policy row's declared QoS on the spot. Declared `durable` with `qos: 1`, delivered `qos: 0` is
+  exactly the silent lapse above, and it becomes a detectable, reportable condition that fits
+  0060's existing four-class taxonomy and quarantine ring rather than needing new machinery.
+  Question 18 owns the shape.
+
+### Subscription QoS is part of the durable subscription's identity, not a tuning knob
+
+**This follows from a fact already established and deserves stating on its own**, because the
+first fact above invites exactly the change that trips it. ActiveMQ keys durable topic
+subscriptions on `(clientId, "<QoS>:<topic>")` — the QoS is *in the key*. So promoting a topic
+from QoS 0 to QoS 1 to put it on the durable path does not modify a subscription; it **creates a
+new one**. And the reverse is worse: demoting a topic that was running at QoS 1 leaves the old
+`1:<topic>` durable subscription behind, still registered, still pinning journal files, and
+nothing reaps it (`offlineDurableSubscriberTimeout` is -1 and the reaper `Timer` is never
+constructed). That is the orphan mechanism firing on a **configuration change** rather than a
+device retirement — across a static roster, once per device. Any QoS change to a durable-path
+topic therefore needs the same decommissioning procedure a retired client does.
 
 One adjacent consequence worth carrying: `canOptimizeOutPersistence()` lets the broker skip the
 store entirely for a persistent publish to a topic with **no durable subscribers**. Until the
@@ -663,6 +708,27 @@ unavailable, not as the leading option.
     also says what a durable row means when its filter is a **wildcard** matching many concrete
     topics, given the ingress kit already treats an entity observed on a second concrete topic
     of the same wildcard stream while unstamped as a declaration error.
+18. **How does the boundary detect that a durable topic has silently stopped being durable?**
+    Added 2026-08-18, from the fact that one or more producers may drop MQTT support. Question 17
+    makes `durable` + `qos: 0` unrepresentable in the *declaration*; that is necessary and not
+    sufficient, because the QoS that matters is the one **delivered**, which no declaration
+    controls and which can change with no deploy on this side. The check itself is cheap —
+    compare `packet.qos` against the row's declared QoS at ingress — so the design work is in
+    what happens next, and the report must choose rather than list:
+    - **What class is it?** It is not a contract violation (the payload is fine) and not a
+      transport fault (the connection is healthy). It is a *degradation of a declared guarantee*,
+      which the four-class taxonomy (0060 KQ3, D-0015) may not have a home for. Say whether this
+      needs a fifth class, a reason code inside an existing one, or a channel outside the
+      taxonomy entirely.
+    - **Does the message still take the durable path?** Writing it to the inbox still buys
+      guarantee A, and refusing it buys nothing — so the likely answer is yes, process normally,
+      report loudly. Confirm that, because the opposite reflex is to quarantine.
+    - **How is it reported without a storm?** At 5 msg/s a lapsed topic trips this on every
+      message. The dedup-and-warn-once shape already ratified for REST unknown-field drift
+      (D-0018) is the obvious precedent and should be reused rather than reinvented.
+    - **Is the inverse worth checking?** Delivered QoS 1 on a row not declared durable means a
+      topic gained a guarantee nobody planned to use — cheap to detect on the same comparison,
+      and it is how a *new* durable-path candidate announces itself.
 
 ## Seams this track cites rather than restates
 
@@ -811,13 +877,15 @@ standing gaps in `facts/app-profile.md` (the whole Contracts section; reconnect 
 which the session mode makes more consequential than it was). The four that now gate the
 survey rather than colour it:
 
-- ~~Who publishes to the 6 topics?~~ **Answered 2026-08-18: MQTT clients.** AMQ-7045 does not
-  sit on this path, and the track is viable. **Replaced by its residual, which now leads:
-  at what QoS do those producers publish?** (item b). A QoS-0 publish becomes a
-  `NON_PERSISTENT` JMS message — not stored for an offline durable subscriber, and delivered at
-  QoS 0 whatever the browser subscribed at. Same failure mode as AMQ-7045, upstream cause,
-  correctable. If the answer is QoS 0 the report must say the mechanism cannot engage rather
-  than specify one that never fires.
+- ~~Who publishes to the 6 topics?~~ **Answered 2026-08-18: MQTT clients today**, so AMQ-7045
+  is off this path and the track is viable — but **one or more producers may drop MQTT support in
+  future**, which puts them back on it silently. The premise is therefore a runtime property, not
+  a settled fact, and question 18 exists because of it. What still gates the survey (item b):
+  **which of the candidate topics are subscribed at QoS 0** — some are, so the durable path
+  covers fewer than 6 as drafted, and each one is a promote-or-exclude call — and **at what QoS
+  the producers publish**, since a QoS-0 publish yields a `NON_PERSISTENT` JMS message that is
+  unstored offline and delivered at QoS 0 whatever the browser subscribed at. One empirical
+  check answers both: subscribe at QoS 1, publish through the real path, read `packet.qos`.
 - **Which topics get the durable path, and what share of the ~50 msg/s do they carry?** (item
   b) — the selection rule that goes on the policy row, the rate every cost estimate is built
   on, and paired with "are their effects idempotent?" it decides how much of the design is

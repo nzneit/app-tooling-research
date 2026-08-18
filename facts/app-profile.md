@@ -135,7 +135,18 @@ Node version, package manager, the whole Contracts section, test framework, and 
   *publisher's* QoS: a QoS-0 MQTT publish becomes a `NON_PERSISTENT` JMS message, unstored for
   offline durable subscribers and delivered at QoS 0 whatever the browser subscribed at — the
   same failure mode from an upstream, correctable cause. Producer publish QoS is now the gating
-  fact (intake item b). Other consequences carried into that track: durable subscriptions exist only
+  fact (intake item b). **Qualified the same day**: the user reports **some of the candidate
+  subscriptions are QoS 0** (so the durable path covers fewer than 6 topics as drafted) and that
+  **one or more producers may drop MQTT support in future**. That last one makes the premise a
+  *runtime* property rather than a settled fact: a producer migrating to JMS/AMQP/STOMP/Camel
+  takes the AMQ-7045 path with no visible break — SUBSCRIBE still succeeds, the durable JMS
+  subscription still exists (it is created from the **requested** QoS), messages still arrive —
+  and only offline retention stops. 0150 question 18 owns detecting it from `packet.qos` at
+  ingress. Related and easy to trip: ActiveMQ keys durable subscriptions on
+  `(clientId, "<QoS>:<topic>")`, so **QoS is part of the subscription's identity** — promoting a
+  topic creates a new durable subscription and demoting one strands the old permanently, which is
+  the orphan mechanism firing on a config change rather than a device retirement.
+  Other consequences carried into that track: durable subscriptions exist only
   for QoS ≥ 1, so **QoS-0 subscriptions are not restored on reconnect and `resubscribe: true`
   is required** (this corrects an earlier note in 0060's annotation); the shipped
   `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable subscribers,
