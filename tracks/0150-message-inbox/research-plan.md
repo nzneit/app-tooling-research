@@ -145,10 +145,16 @@ converter reading; confirm it empirically alongside the delivered-QoS check.
 
 ### The answer is conditional and revocable, so the design must treat it that way
 
-**Two facts supplied 2026-08-18 change the status of everything above from a settled premise to a
-runtime property.** First, **some of the candidate subscriptions are QoS 0** — so the durable
-path does not cover all 6 topics as drafted. Second, **one or more producers may drop MQTT
-support in future**, at which point their messages take the AMQ-7045 path after all.
+**A fact supplied 2026-08-18 changes the status of everything above from a settled premise to a
+runtime property: one or more producers may drop MQTT support in future**, at which point their
+messages take the AMQ-7045 path after all.
+
+*(An earlier revision of this section read a user statement as "some of the candidate
+subscriptions are QoS 0" and built a promote-or-exclude framing on it. **That was a misreading
+and this is the correction**: all ~6 durable-path candidates are QoS 1 today, so the durable path
+covers the set as drafted and no promotion is needed. The statement was about the wider ~40, and
+its real consequence is recorded above under the tier boundary — where it is a larger finding
+than the misreading was.)*
 
 The second fact is the serious one, because **the degradation is silent**. A producer that
 migrates to JMS, AMQP, STOMP or Camel does not break the connection, the subscription, or the
@@ -200,17 +206,42 @@ the `retroactive(true)` provisioning question below.
 ### What holds, now that the producers are MQTT clients
 
 - **Durability is per-subscription and QoS-gated.** A durable JMS subscription is created only
-  when `cleanSession=false` **and** clientId is non-null **and** requested QoS ≥ 1. So the 6
-  QoS-1 topics get real durable subscriptions while the other ~34 QoS-0 subscriptions get no
-  session state and **are not restored on reconnect** — a deviation from MQTT 3.1.1 §3.1.2.4.
-  The client must re-SUBSCRIBE everything on every reconnect or go silently deaf on 34 of 40
-  topics. **This reverses what an earlier draft of this plan said**: `resubscribe: true` is not
-  redundant here, it is *required*, and the same wrong claim was written into 0060's report
-  annotation and has been corrected there.
+  when `cleanSession=false` **and** clientId is non-null **and** requested QoS ≥ 1. Every QoS-0
+  subscription therefore carries no session state and **is not restored on reconnect** — a
+  deviation from MQTT 3.1.1 §3.1.2.4. The client must re-SUBSCRIBE everything on every reconnect
+  or go silently deaf on its QoS-0 topics. **This reverses what an earlier draft of this plan
+  said**: `resubscribe: true` is not redundant here, it is *required*, and the same wrong claim
+  was written into 0060's report annotation and has been corrected there.
 - **The two tiers have opposite loss semantics.** The shipped
   `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable
-  `TopicSubscription`s, so the 34 QoS-0 topics silently discard oldest beyond prefetch+1000,
-  while the 6 durable ones never drop — they accumulate against disk instead.
+  `TopicSubscription`s, so QoS-0 topics silently discard oldest beyond prefetch+1000, while
+  durable ones never drop — they accumulate against disk instead.
+- **The tier boundary is QoS, not intent — and that is the finding.** Corrected 2026-08-18:
+  earlier drafts of this plan wrote "the 6 QoS-1 topics" against "the other ~34 QoS-0
+  subscriptions", which is wrong. All ~6 durable-path candidates are QoS 1 **and so are an
+  unknown number of the other ~34**, which are a mix. ActiveMQ does not know which subscriptions
+  this app wanted to be durable; it creates a durable JMS subscription for *every* QoS-1
+  subscription on a `clean: false` session. So the app is **already paying for durability it
+  never asked for** on those topics — offline accumulation, journal pinning, no reaping, no
+  `constantPendingMessageLimitStrategy` ceiling — and has been since the session mode was set.
+  Three consequences land in this track rather than outside it:
+  - **The orphan liability is not N × 6.** It is N × (6 + however many of the ~34 are QoS 1).
+    Every sizing figure in this plan that counted 6 subscriptions per device is a floor, not an
+    estimate, until that count is known.
+  - **The reconnect replay burst is correspondingly larger** (question 5). The 6 topics carry
+    ~5 msg/s of the ~50 msg/s aggregate; the incidental durable subscriptions among the other
+    ~34 draw from the remaining ~45 msg/s and replay into the *same* bounded queue and the same
+    receipt-ordered ack release. The burst competes with the path that needs it, and the input
+    is up to an order of magnitude larger than the 6-topic figure implies.
+  - **Those topics have no inbox.** Replayed messages on them are applied with only the
+    per-connection packet-identity guard, which by construction cannot span the reconnect that
+    caused the replay. Whatever double-apply hazard motivates this track exists there too, today,
+    unmitigated — the report should say so plainly even though fixing it is out of scope.
+
+  The obvious remedy — **demote any QoS-1 subscription among the ~34 that does not need offline
+  retention** — is cheap in the client and runs straight into the identity trap below: the
+  stranded `1:<topic>` durable subscription outlives the demotion and pins the journal forever.
+  Audit and decommissioning are one procedure, not two.
 - **Deferral gets real backpressure, and is safe from retransmission.** Durable MQTT
   subscriptions take `DEFAULT_DURABLE_TOPIC_PREFETCH` = **100**, per subscription — so at most
   6×100 = 600 outstanding, not the feared ~32k (which applies only to QoS-0/clean-session
@@ -405,7 +436,7 @@ unavailable, not as the leading option.
      is never populated and `options.resubscribe` becomes a **no-op**. Ordinarily invisible,
      because a broker restores subscriptions on a `clean: false` reconnect — but **ActiveMQ does
      not restore QoS-0 subscriptions**, so if the boundary is relying on mqtt.js's resubscribe
-     rather than re-subscribing explicitly, the app goes deaf on the 34 QoS-0 topics after its
+     rather than re-subscribing explicitly, the app goes deaf on every QoS-0 topic after its
      first reconnect. Check which.
   2. **A will message would fire on every ordinary tab close.** mqtt.js sends no DISCONNECT on
      page unload, and ActiveMQ's `onWebSocketClose` synthesises one — which is why a normally
@@ -505,7 +536,7 @@ unavailable, not as the leading option.
      *The leading candidate and the hypothesis to disprove* — but note the qualifier, which is
      load-bearing and was missing from this plan's previous draft. **[MQTT-4.6.0-2] requires a
      client to send PUBACKs in the order the corresponding PUBLISHes were received.** So
-     deferring on the 6 durable topics while acknowledging the other 34 immediately is
+     deferring on the 6 inbox topics while acknowledging every other topic immediately is
      *non-conforming*, and so is letting two durable topics' independent IndexedDB commits
      release acks in completion order. The conforming shape is one ordered release queue over
      **all** traffic: a message's ack waits for every earlier message's ack, durable or not.
@@ -574,7 +605,7 @@ unavailable, not as the leading option.
    detection is the only mechanism available on 3.1.1 — and what the app does when it fires.
    Two sub-questions survive: whether 0060's oldest-first shedding is still defensible once
    some rows are durable (it is not, if the queue is ever reached), and what the drain costs
-   the other 34 topics, which queue behind the same serialized pump and the same ordered ack
+   the other ~34 topics, which queue behind the same serialized pump and the same ordered ack
    release.
 5a. **What does the broker actually do under deferral? — answered, and favourably.** ActiveMQ
    Classic performs **no in-connection retransmission**: there is no timer on the delivery path,

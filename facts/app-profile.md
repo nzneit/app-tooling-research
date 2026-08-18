@@ -135,9 +135,8 @@ Node version, package manager, the whole Contracts section, test framework, and 
   *publisher's* QoS: a QoS-0 MQTT publish becomes a `NON_PERSISTENT` JMS message, unstored for
   offline durable subscribers and delivered at QoS 0 whatever the browser subscribed at — the
   same failure mode from an upstream, correctable cause. Producer publish QoS is now the gating
-  fact (intake item b). **Qualified the same day**: the user reports **some of the candidate
-  subscriptions are QoS 0** (so the durable path covers fewer than 6 topics as drafted) and that
-  **one or more producers may drop MQTT support in future**. That last one makes the premise a
+  fact (intake item b). **Qualified the same day**: the user reports that **one or more producers
+  may drop MQTT support in future**. That makes the premise a
   *runtime* property rather than a settled fact: a producer migrating to JMS/AMQP/STOMP/Camel
   takes the AMQ-7045 path with no visible break — SUBSCRIBE still succeeds, the durable JMS
   subscription still exists (it is created from the **requested** QoS), messages still arrive —
@@ -146,7 +145,19 @@ Node version, package manager, the whole Contracts section, test framework, and 
   `(clientId, "<QoS>:<topic>")`, so **QoS is part of the subscription's identity** — promoting a
   topic creates a new durable subscription and demoting one strands the old permanently, which is
   the orphan mechanism firing on a config change rather than a device retirement.
-  Other consequences carried into that track: durable subscriptions exist only
+- **Subscription QoS across the ~40 topics** (2026-08-18, user): **all ~6 durable-path candidates
+  are QoS 1 today**; the other ~34 are a **mix of QoS 1 and QoS 0**. An earlier entry in this
+  file said the 6 were QoS 1 and the other ~34 were QoS 0 — that was wrong and this corrects it.
+  The consequence is larger than the correction: ActiveMQ creates a durable JMS subscription for
+  *every* QoS-1 subscription on a `clean: false` session, with no way to know which ones the app
+  intended to be durable. **The QoS-1 topics among the ~34 are therefore already durable today** —
+  accumulating while offline, pinning journal files, exempt from the
+  `constantPendingMessageLimitStrategy limit="1000"` ceiling that bounds QoS-0 subscribers, and
+  never reaped — without the app having asked for any of it, and without an inbox to deduplicate
+  their reconnect replay. Per-device durable-subscription count is **N × (6 + that unknown
+  number)**, so every 6-based sizing figure is a floor. How many, and whether any of them need
+  offline retention at all, is intake 2026-08-17-0150 item b.
+  Other consequences carried into 0150: durable subscriptions exist only
   for QoS ≥ 1, so **QoS-0 subscriptions are not restored on reconnect and `resubscribe: true`
   is required** (this corrects an earlier note in 0060's annotation); the shipped
   `constantPendingMessageLimitStrategy limit="1000"` applies only to non-durable subscribers,
