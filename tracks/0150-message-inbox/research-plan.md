@@ -163,17 +163,24 @@ work in this track.
   broker process lifetime, only under a 5000-entry LRU, and only until some connection uses
   `cleanSession=true`. Useful as a corroborating signal; never as the dedup mechanism.
 
-### The live finding: a per-tab clientId with `clean: false` is an unbounded broker liability
+### The orphan liability: real, but at device scale rather than tab scale
 
-**The clientId is unique per browser tab** (user, 2026-08-18). That settles the multi-tab
-branch — there is no steal war, because two tabs never present the same clientId, and **the
-prediction this plan made in its previous revision is falsified**. The other branch is the live
-one, and it is worse. Verified against `apache/activemq` source; three corrections were made to
-the first framing, all of which made it more severe.
+**The clientId is device-scoped, with a single connection using it at a time** (user,
+2026-08-18). An earlier revision of this plan read a prior statement as *per-tab minting* and
+built two sections on that reading; **that was a misreading and this section is the correction**.
+One device means one clientId, one set of 6 durable subscriptions, reused across tabs and
+reloads — so orphans accrue per departed *device*, not per tab opened.
 
-Every tab that has ever connected minted **6 durable JMS subscriptions** (one per QoS-1 topic)
-that nothing removes: `offlineDurableSubscriberTimeout` defaults to `-1` and the reaper `Timer`
-is never constructed. Then:
+**The rate drops by orders of magnitude. The severity of a single orphan does not**, and that is
+the part not to lose: one never-acking durable subscriber is sufficient to pin every journal file
+written since it was created, so one decommissioned laptop, cleared browser profile, or departed
+user still produces unbounded growth. A device that comes back drains its backlog and releases
+the pin; a device that never returns never does. Every mechanism below still holds — only the
+arrival rate of new orphans changes.
+
+Each device that has ever connected holds **6 durable JMS subscriptions** that nothing removes:
+`offlineDurableSubscriberTimeout` defaults to `-1` and the reaper `Timer` is never constructed.
+Then:
 
 - **One orphan pins the whole store.** KahaDB removes a topic message's index entries only when
   *no* durable subscription still references its sequence (`isSequenceReferenced`), and a
@@ -203,8 +210,10 @@ subscribers" page names the exact failure: offline durable subscribers mean the 
 to keep all the messages sent to those topics… this message piling can over time exhaust broker
 store limits… and lead to the overall slowdown of the system."*
 
-**This is a live production liability independent of this track, and it is probably already
-accruing.** It should be raised with whoever owns the broker now rather than at the go gate.
+**This is still a live liability independent of this track, and still worth raising with whoever
+owns the broker** — just at a rate set by device churn rather than tab churn, and therefore a
+matter of weeks-to-months rather than hours. `offlineDurableSubscriberTimeout` remains the fix,
+and it remains unset.
 Diagnosis note for them: do **not** rank offenders by pending count —
 `DurableTopicSubscription.getPendingQueueSize()` returns 0 for inactive subscriptions (an
 unresolved `// TODO: need to get from store`), so the JMX attribute and the web console column
@@ -212,36 +221,38 @@ both read zero for exactly the orphans being hunted. The leading indicator is th
 `BrokerViewMBean.getInactiveDurableTopicSubscribers()`, which should be flat and will instead
 climb by 6 per tab, plus per-topic `getStoreMessageSize()` and the KahaDB `db-*.log` file count.
 
-### The tension this creates with the track itself
+### Remediation, and why `clean: true` is no longer the recommendation
 
-The cleanest remedy is **`cleanSession: true` per tab**: the MQTT strategy only sets a
-subscription name when `!isCleanSession()`, so no durable subscription is created at all, and a
-reconnect with the same clientId under `clean: true` also *deletes* durable subs left from the
-`clean: false` era. QoS 1 still gives at-least-once for the life of the connection.
+An earlier revision of this plan recommended **`cleanSession: true`** as the cleanest remedy,
+reasoning that no durable subscription is created when `!isCleanSession()` is false, so the
+liability disappears at source. **At device scope that trade is no longer worth making**, and the
+recommendation is withdrawn. It would throw away cross-reload durability — which now actually
+works, because the device's session persists and the broker replays what it missed — in exchange
+for suppressing a liability that has dropped from tab-rate to device-rate and has a direct
+broker-side fix. Keep `clean: false`.
 
-**But it reclaims nothing already leaked, and that needs saying plainly.** `deleteDurableSubs`
-operates only on `lookupSubscription(clientId)` — the subs belonging to the clientId connecting
-right now. With a unique clientId per tab, a new tab under `clean: true` never sees, let alone
-deletes, the orphans left by tabs that are already gone. So remediation is **two** changes, not
-one: `clean: true` (or a user-scoped clientId) stops new leakage at the source, and
-`offlineDurableSubscriberTimeout` — or a JMX sweep — is the only thing that reclaims the
-existing backlog. Doing either alone leaves the problem half-solved.
+What remains true regardless of that choice: **`clean: true` reclaims nothing already leaked.**
+`deleteDurableSubs` operates only on `lookupSubscription(clientId)`, the subscriptions of the
+clientId connecting at that moment, so it never touches orphans left by devices that are gone.
+The existing backlog comes back only via `offlineDurableSubscriberTimeout` or a JMX sweep.
 
-But that removes what made this track live. Under `clean: true` there is no offline queueing and
-no cross-reload redelivery — the original null hypothesis returns, and the durable half of the
-inbox has no traffic to act on. What survives is narrower and still real: **the acknowledged-
-but-not-applied loss window inside a live connection**, which the ack-deferral design closes and
-which nothing else does.
+So remediation is now **one broker-side change, not an application redesign**: set
+`offlineDurableSubscriberTimeout` to a finite value, sized so that a device legitimately offline
+for a weekend is not reaped. Note the client-side condition that carries with it — a device whose
+subscriptions *were* reaped reconnects successfully and then receives nothing, silently, because
+ActiveMQ hardcodes `sessionPresent = 0` and cannot tell it. The app must therefore re-SUBSCRIBE
+unconditionally on every connect, which it must do anyway for the QoS-0 topics ActiveMQ never
+restores.
 
-So the report should evaluate a third architecture that this plan has not yet stated, and it may
-be the right answer: **`clean: true` per tab, application-level resync on reconnect, and the
-inbox scoped to the in-connection ack window.** Gap handling on reconnect is not new work — it
-is exactly 0070's accepted invalidate-don't-set rule, which already treats every reconnect as a
-gap. That combination removes the broker liability entirely, keeps the loss-window fix, and
-costs the durability-across-reload property that the 6 topics may or may not actually need
-(intake item b). If durability across a reload *is* required, the clientId must key to the user
-or device rather than the tab, and then single-connection leader election becomes mandatory
-because link stealing is enabled.
+### What this restores for the track
+
+Both halves of the inbox's value proposition are live again. **Cross-reload redelivery is real**:
+the device's durable subscriptions queue QoS-1 messages while every tab is closed and replay them
+on return, so duplicate suppression across a reload has genuine traffic to act on. **And the
+acknowledged-but-not-applied loss window inside a live connection** remains the thing only the
+ack-deferral design closes. The third architecture the previous revision proposed — `clean: true`
+plus application-level resync — is retained as the **fallback** if the broker-side change proves
+unavailable, not as the leading option.
 
 ### Two ship-blockers that belong to operations, not the front end
 
@@ -526,24 +537,30 @@ because link stealing is enabled.
     a schema change invalidates silently? Include the mixed-version deploy: two tabs on
     different app versions share one origin database and one `versionchange` event, which
     blocks until every other connection closes.
-11. **Multi-tab — answered, and it decides the clientId strategy rather than the inbox.** The
-    clientId is unique per tab, so link stealing (enabled on the `wss` connector) never fires
-    between tabs and there is no steal war; **the previous revision's prediction is falsified**
-    and is left in the record above rather than deleted. What the answer buys instead is the
-    unbounded durable-subscription liability described above, whose remedy — `clean: true` per
-    tab, or a user/device-scoped clientId — is a *connection* decision this track surfaces but
-    does not own. Two things remain genuinely this track's:
-    - **If the clientId ever becomes user- or device-scoped** (the branch that keeps durability
-      across a reload), link stealing makes single-connection **leader election mandatory**, not
-      optional: one elected tab owns the MQTT connection *and* the IndexedDB writes, the others
-      observe. Web Locks is the natural primitive — crash-safe handoff, no lease or heartbeat,
-      FIFO per resource — with BroadcastChannel for change notification, since IndexedDB has no
-      native change events. This is the trigger 0060's assumption A-13 named.
-    - **Regardless of clientId strategy**, tabs share one IndexedDB. If more than one tab writes
-      the inbox, the dedup store needs either a single writer or transactions that are correct
-      under concurrent writers. The report says which.
+11. **Multi-tab — the invariant is stated, and the question is what enforces it.** The clientId
+    is device-scoped and "there *should* only be a single client connecting with a unique
+    clientId at a time". That is a design intent, and the whole architecture rests on it: with
+    link stealing enabled, two tabs on one device present the same clientId and produce the steal
+    war this plan described two revisions ago — tab B evicting tab A, A reconnecting and stealing
+    back, until 0060's give-up policy parks both in `degraded`. So the question is not *whether*
+    single-connection is right, it is **what makes it true**:
+    - **If nothing enforces it**, the invariant holds by user habit, and one person opening a
+      second tab breaks it. That is intake item f and it should be checked before the gate.
+    - **If something does**, the report records what and confirms it survives the cases that
+      matter — a crashed leader, a backgrounded leader, a leader whose tab is frozen.
+    **Single-connection leader election is therefore the enforcement mechanism for an invariant
+    the design already assumes**, rather than a repair or an optimization. Web Locks is the
+    natural primitive: crash-safe handoff with no lease or heartbeat, FIFO per resource, so a
+    dead leader's lock is released by the browser rather than waiting on a timeout. One elected
+    tab owns the MQTT connection *and* the IndexedDB writes; the others observe, with
+    BroadcastChannel for change notification since IndexedDB has no native change events. This
+    is precisely the trigger 0060's assumption A-13 named ("reopens if tabs share one MQTT
+    connection").
+    - **Independent of that**, tabs share one IndexedDB. If more than one tab could ever write
+      the inbox — including during a leader handoff — the dedup store needs either a single
+      writer or transactions correct under concurrent writers. The report says which.
     Note both an open IndexedDB connection and a held Web Lock forfeit back/forward-cache
-    eligibility.
+    eligibility, so leader election and the bfcache benefit discussed above are in tension.
 12. **Retention, compaction, reset, and poison recovery.** An earlier draft of this plan
     reasoned that the retention window is **derivable** from the broker's session-expiry
     interval, since the broker never redelivers beyond it. **That does not hold here**: MQTT

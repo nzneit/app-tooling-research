@@ -173,8 +173,25 @@ Node version, package manager, the whole Contracts section, test framework, and 
   AMQ-5856 makes the flag inert over MQTT-on-WebSocket anyway. If reconnect latency is the real
   concern the lever is **keepalive** — 30 s sets the 45 s floor on both sides — traded against
   the background-tab throttling hazard recorded above.
-- clientId scope: **unique per browser tab** (2026-08-18, user). This is the **worse** of the
-  two branches and a live production liability independent of track 0150. Each tab mints **6
+- clientId scope: **device-scoped, with a single connection using it at a time** (2026-08-18,
+  user, clarifying an earlier statement this repo first read as per-tab minting — that reading
+  was wrong and the entry below is corrected in place). One device means one clientId, one set of
+  6 durable subscriptions, reused across tabs and reloads. Three consequences. **(1) The orphan
+  liability shrinks by orders of magnitude but does not disappear**, and it is important that the
+  mechanism is unchanged: because one never-acking durable subscriber is sufficient to pin every
+  journal file written since it was created, a single decommissioned laptop, cleared profile, or
+  departed user still causes unbounded growth. Device scoping lowers the *rate* of new orphans,
+  not the *severity* of one. `offlineDurableSubscriberTimeout` remains the only automatic reclaim
+  and is still unset. **(2) Cross-reload durability actually works**, which is what the inbox
+  track wants: close a tab, reopen it, and the broker replays what the device missed. **(3) The
+  single-connection invariant is stated as intent, not as an enforced property** — "there
+  *should* only be a single client connecting with a unique clientId at a time". With link
+  stealing enabled, two tabs on one device would present the same clientId and produce the steal
+  war described above. What enforces it is intake 2026-08-17-0150 item f.
+  > **Superseded 2026-08-18, kept as the record of the misreading.** The text below was written
+  > against "a unique clientId per tab" and describes a liability at a rate that does not obtain.
+  > Its *mechanisms* are all still accurate and still worth reading; only the rate is wrong.
+  Each tab mints **6
   durable JMS subscriptions** that nothing removes (`offlineDurableSubscriberTimeout` defaults
   `-1`, and the reaper `Timer` is never constructed). Verified in `apache/activemq` source:
   KahaDB removes a topic message's index entries only when *no* durable subscription still
