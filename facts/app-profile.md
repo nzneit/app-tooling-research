@@ -62,6 +62,13 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - QoS levels used: 1 and 0
 - Topic-scheme shape (redacted example ok): varies a bit by use case
 - Rough peak message rate (msgs/sec): ~50 per second
+- **Payload sizes: typically under 10 KB, worst case ~50 KB** (2026-08-23, user — intake
+  2026-08-22-0160 item a). Consequences for any buffer sized in bytes: the worst case is
+  **5× the typical**, so a count-based bound cannot bound memory (100 retained messages is
+  1 MB or 5 MB depending only on traffic) — which is the concrete justification for 0160's
+  byte accounting. And the *duration* a fixed count buys is short: at ~50 msg/s aggregate,
+  100 messages is **about two seconds** of history. REST response-body sizes were not
+  supplied and remain an assumption.
 - Session mode: **`clean: false` with a persisted clientId** (2026-08-17, user) — a
   **persistent** session, not mqtt.js's default. This **falsifies 0060 assumption A-5 and
   0070 assumption A-6**, both of which declared `clean: true`; each accepted report now
@@ -285,11 +292,17 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - Scanning preference: an **offline vulnerability database fed by a periodic sync** is the
   preferred operating model, though outbound access is believed available (2026-08-14, user).
 - Browser targets: Firefox version ~124 , Chromium latest - (latest - 2)
-  - The Firefox floor is unusually consequential for track 0160: `fetch keepalive` shipped
-    in Firefox 133 (2024-11-26), so at ≤ 132 the only page-dismissal-surviving sender is
-    `sendBeacon` (≤ 64 KiB shared in-flight quota), and floor-era Firefox predates all
-    Reporting API support. The fleet's *actual* Firefox version is intake
-    2026-08-22-0160 item f.
+  - **Confirmed 2026-08-23 (user, intake 2026-08-22-0160 items f and h): the fleet runs
+    Firefox 124 today, and it is Firefox only** — Chromium is a possible future, not a
+    current arm. Both halves are consequential for 0160 and neither relaxes. `fetch
+    keepalive` shipped in Firefox 133 (2024-11-26), so the only page-dismissal-surviving
+    sender is `sendBeacon` (≤ 64 KiB, shared in-flight quota, and in practice
+    `text/plain` only cross-origin) — 0160's two-budget delivery design is therefore
+    load-bearing rather than precautionary. Firefox parses `Reporting-Endpoints` only from
+    130 and generates no crash reports at any version, so the Chromium crash-report
+    complement contributes **nothing to this fleet today**: renderer OOM and unresponsive
+    kills produce no report at all, and absence-based detection at the backend is the only
+    compensation. Revisit if a Chromium arm appears.
 - **Device runtime: the OS runs from a RAM disk** (2026-08-22, user — surfaced while
   chartering 0160). Three consequences carried into every persistence recommendation.
   (1) The browser profile — IndexedDB included — is RAM, so "spill to disk" spends the same
@@ -304,11 +317,82 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - **Flight-recorder capture envelope: 10–50 MB** (2026-08-22, user) — the rough memory
   envelope for 0160's in-RAM capture buffers across all buckets. An envelope, not a hard
   budget; byte-accounting and per-bucket apportionment are 0160 design questions.
+- **Flight-recorder day-one depths: last 100 MQTT messages, 25 HTTP exchanges, 100 xstate
+  transitions, 50 log lines** (2026-08-23, user — intake 2026-08-22-0160 item d). These are
+  config seeds, and the arithmetic they imply is worth carrying — in two parts, because the
+  payload sizes above cover MQTT only. The **computable** term: 100 MQTT messages costs
+  **1 MB typically and 5 MB at the worst-case payload size**. The other three buckets have no
+  measured record size, so sizing them by analogy adds roughly 1.5 MB, for ~2.5 MB typical and
+  ~6.5 MB worst — an estimate, not a fact. Either way memory is not the binding constraint at
+  these depths; **history duration is**: 100 MQTT messages is about **two seconds** at the
+  ~50 msg/s peak rate. Which xstate machines matter most, whether machine definitions carry
+  `version`, and REST response-body sizes were not answered and remain assumptions.
+- **Device hardware: desktop-class but low power, 6–16 GB RAM, contended between services**
+  (2026-08-23, user — intake 2026-08-22-0160 item f). Makes 0160's guessed 10× de-rate of
+  desktop-measured capture costs too pessimistic, though the answer gives a hardware class
+  rather than a factor — so the spike measures rather than re-guesses. The RAM figure is generous
+  against a tens-of-MB envelope, but the memory is shared with other services on the same
+  RAM disk, so "there is plenty of RAM" is not a safe premise for any component that grows.
+- **App build identifier at runtime: `major.minor.patch.full_commit_sha.hotfix_number`**
+  (2026-08-23, user — intake 2026-08-22-0160 item e), where a standard build's hotfix number
+  is 0 and increments monotonically per hotfix build. Stated in the future tense ("will be"),
+  and the answer defines the **format** without confirming that page code can read it at
+  runtime — which is the half that decides whether a build change is owed. So 0160's RD-7
+  envelope stamp has a defined shape, and "readable by the bundle at runtime" stays a declared
+  assumption; if it is not, `appBuild` needs a build-time define. Because the full commit SHA
+  is embedded, a report is attributable to an exact tree.
+- **A fleet-unique device identifier is available to page code** (2026-08-23, user — intake
+  2026-08-22-0160 item i). Satisfies 0160's RD-7 instance identity: retried POSTs become
+  deduplicable at the backend, same-device bundles can be joined across tabs and reloads, and
+  absence-based crash detection has a key. The item also asked whether that id **may appear
+  inside a report leaving the device**, and that half went unanswered — the same class of
+  question item b left unruled, so it stays a declared assumption rather than a settled fact.
+- **Two tabs at most, with distinct views** (2026-08-23, user — intake 2026-08-22-0160
+  item j). So multi-tab is a live condition, not a hypothetical: per-device recorder memory is
+  2× the envelope, two independent failure nets can report one device-level cause twice, and —
+  because at most one tab holds the MQTT connection — the connectionless tab's empty MQTT
+  bucket must be distinguishable from a quiet one. It also gives intake 2026-08-17-0150 item f
+  its answer's shape: two concurrent tabs exist, so whatever enforces the single-connection
+  invariant has to work at N=2.
+- **An incumbent React error boundary already exists** (2026-08-23, user — intake
+  2026-08-22-0160 item g). No incumbent `window.onerror` or `unhandledrejection` reporter was
+  named, so 0160's global nets arm without a known conflict, but the React net should be one
+  call inside the existing boundary rather than a second boundary the app must mount.
+- **Redaction today is a key-name scrubber** (2026-08-23, user — intake 2026-08-22-0160
+  item b): an existing function takes an object and scrubs the *values* of any key or
+  sub-key whose name matches a list of strings. Two things follow, and the second matters
+  more than the first. The mechanism maps exactly onto the `keys` rule form 0050 specified
+  and 0160 adopts, so the recorder shares a rule shape the team already runs — deep key
+  matching, no path or pattern rules needed to reach parity. But the question asked what
+  *policy* governs what may leave the device — PII, credentials, who reads the reports,
+  whether anything regulatory applies — and the answer describes a **mechanism**, not a
+  policy. So no constraint has actually been ruled: 0160 keeps its conservative default and
+  treats the key list as the current best expression of intent rather than as an approved
+  disclosure boundary.
+- **Web Workers are a scheduled goal, not current** (2026-08-23, user — intake
+  2026-08-22-0160 item k): some code is expected to move to workers, with no date. So
+  "everything is main-thread" is a **temporary** truth and must not be designed into anything
+  as permanent. 0160 records it as exactly that and names the two costs a future bridge must
+  pay — a recorder-global sequence cannot be stamped synchronously from a worker, and a
+  worker's `performance.timeOrigin` differs from the page's — without designing the bridge.
 - **An error-report HTTP endpoint exists; its payload schema is ours to define**
   (2026-08-22, user). 0160's recommendation authors the schema as a vendored OpenAPI
-  contract so the 0010 pipeline generates its types and validators. Endpoint particulars
-  (origin, size ceiling, auth, infrastructure independence from the broker/REST backend)
-  are intake 2026-08-22-0160 item c.
+  contract so the 0010 pipeline generates its types and validators. **Particulars answered
+  2026-08-23** (user — intake 2026-08-22-0160 item c): it is **cross-origin**, a **cloud
+  service on infrastructure separate from the MQTT broker and the REST backend**, its
+  **maximum payload size is negotiable**, and **no auth arrangement is defined yet** ("let's
+  keep things flexible"). Four consequences. (1) Delivery independence is a *fact*: the
+  report path does not share fate with the transport being diagnosed, which is the premise
+  0160's question 10 had to assume. (2) Cross-origin means a CORS preflight on every
+  contented JSON POST — acceptable for the triggered bundle, and it makes `Content-Encoding:
+  gzip` free to *ask for* since the preflight is already paid. Note the item asked whether
+  gzip is accepted and the answer covered only the size half, so whether the endpoint will
+  decode compressed bodies is still open. (3) `sendBeacon` **cannot set
+  request headers at all**, and cross-origin it is restricted to CORS-safelisted content
+  types, so the last-gasp path must be `text/plain` with any credential carried in the body
+  (or a `SameSite=None; Secure` cookie) — an auth design decided before the endpoint is
+  built, not after. (4) A negotiable ceiling means 0160 should state the number it needs
+  rather than discover it.
 - Test framework: **vitest 4.1.9** (2026-08-14, user) — retires an assumption standing since
   Wave 2
 - Approximate app scale (LOC or file count): 150,000 lOC

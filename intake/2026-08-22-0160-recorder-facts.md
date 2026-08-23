@@ -3,6 +3,29 @@
 **Status**: open
 **Owner**: app owner (a–g, i–l), plus whoever owns the report backend (c, h)
 
+> **Items a–l answered 2026-08-23** (inline below, in the user's words). All twelve are
+> recorded in [facts/app-profile.md](../facts/app-profile.md) and the 0160 report was revised
+> against them. **Two items remain open**: **m** and **n** below, added 2026-08-23 from the
+> failure-mode enumeration over the recommended design.
+>
+> **Six answers did not fully close their questions**, and the report carries each as a
+> declared assumption rather than inferring the rest:
+>
+> - **item b** described the app's existing scrubbing *mechanism*, not a *policy* — nobody has
+>   ruled what may leave the device, so the report keeps a conservative default and does not
+>   read "a scrubber exists" as permission to ship payloads verbatim.
+> - **item a** answered for MQTT payloads only; REST response-body sizes are still assumed by
+>   analogy, and so are the non-MQTT terms of the byte arithmetic.
+> - **item c** answered the endpoint's size question but not whether it accepts
+>   `Content-Encoding: gzip`; the report specifies gzip as an *ask*, not a capability.
+> - **item e** defined the build identifier's format in the future tense without saying whether
+>   page code can read it at runtime — the half that decides whether a build change is owed.
+> - **item i** answered that a fleet-unique device id is available, but not whether it may
+>   appear inside a report leaving the device (the same question item b left unruled).
+> - **item h** was answered with browser composition (Firefox today, possibly Chromium later)
+>   rather than the operational feasibility it asked about. Inert today either way, since
+>   Firefox emits no crash reports at any version.
+
 Track [0160-flight-recorder](../tracks/0160-flight-recorder/research-plan.md) asks whether
 the app gets a memory-bounded per-bucket capture of recent events with triggered error
 reporting. The chartering session answered the scope questions (triggers, schema ownership,
@@ -23,6 +46,7 @@ plausible for the buckets that matter. At the ~50 msg/s aggregate, 2 KB average 
 make a 20 MB envelope ≈ 200 s of full-rate history; 20 KB payloads make it ≈ 20 s.
 
 → Resolution: updates facts/app-profile.md (MQTT section, payload-size fact)
+Typical mqtt payload size is under 10 KB . Worst case mqtt payload is like 50 KB
 
 ## b — What may leave the device in an error report
 
@@ -37,6 +61,7 @@ replay, so every redaction is marked (plan RD-10) — but the *rules* are a fact
 team can supply.
 
 → Resolution: updates facts/app-profile.md and the plan's question 13
+Current functionality that exists today in the app is having a scrubbing function accept an object and then any keys, or sub keys, that match a list of strings will get their values scrubbed.
 
 ## c — The report endpoint's particulars
 
@@ -54,6 +79,10 @@ The endpoint exists (charter, 2026-08-22) and the payload schema is ours. What r
    question 10's delivery-independence design depends on the answer.)
 
 → Resolution: updates facts/app-profile.md (new report-endpoint entry)
+1. Cross origin.
+2. Max payload size is negotiable
+3. No defined auth arrangement yet, leet's keep things flexible.
+4. Separate infrastructure. It will be a service with an endpoint in the cloud to accept our payloads.
 
 ## d — Initial buckets and depths
 
@@ -64,6 +93,7 @@ owns. Also: which xstate machines matter most for diagnosis, and do the app's ma
 `version` on their definitions (the replay reservation stamps machine id + version)?
 
 → Resolution: config seeds recorded in the report's recommended defaults
+Let's keep the last 100 MQTT messages, last 25 http exchanges, last 100 transitions, and last 50 log lines.
 
 ## e — Build identity at runtime
 
@@ -73,6 +103,8 @@ attributable to the code that produced it. If none exists today, adding one is a
 change worth flagging early.
 
 → Resolution: updates facts/app-profile.md (Environment section)
+The app build identifier will be semver plus some more: major.minor.patch.full_commit_sha.hotfix_number
+Where a standard build's hotfix number is 0, and then it monotonically increments whenever a hotfix build is made.
 
 ## f — Device hardware, and the fleet's real browser floor
 
@@ -87,6 +119,9 @@ change worth flagging early.
    the 10–50 MB envelope and the durable-parking risk ruling.
 
 → Resolution: updates facts/app-profile.md (Environment section)
+1. desktop class, but low power
+2. It is currently firefox 124
+3. The devices have anywhere from 6 GB to 16 GB. It is a shared resource with a bit of contention between services on how the memory gets used.
 
 ## g — Incumbent error handling
 
@@ -97,6 +132,7 @@ than fight them (double-reporting, handler-ordering surprises), and if an incumb
 reporting path exists, the report should say whether 0160 replaces or joins it.
 
 → Resolution: updates facts/app-profile.md; may reshape plan question 7
+A React error boundary exists
 
 ## h — Reporting-Endpoints feasibility (Chromium crash complement)
 
@@ -111,6 +147,7 @@ is there an endpoint that could receive `application/reports+json` POSTs?
 
 *Items i–l added 2026-08-23, from the failure-mode enumeration over the plan
 ([register](../tracks/0160-flight-recorder/plan-fmea-enumeration.md)).*
+It's all firefox today, but maybe someday down the line it could be chromium.
 
 ## i — Is a device identifier available to page code, and may it appear in reports?
 
@@ -122,6 +159,7 @@ it accessible to application code at runtime, and is it acceptable inside a repo
 payload? If not, what device identity is available and permitted?
 
 → Resolution: updates facts/app-profile.md; feeds plan questions 7, 9, 16
+Yep, device identifier is available that is unique across a fleet.
 
 ## j — Tab usage patterns
 
@@ -132,6 +170,7 @@ trigger coordination is worth designing, and connects to the single-connection e
 question intake 2026-08-17-0150 item f already raised.
 
 → Resolution: feeds plan question 16; may update facts/app-profile.md
+Two tabs at most today are open for the app. They have distinct views and distinct
 
 ## k — Does any application code run in Web Workers?
 
@@ -141,6 +180,7 @@ today, the report declares that as a stated (and checkable) assumption instead o
 one; if not, the interface needs a thread story.
 
 → Resolution: settles plan question 6's thread dimension
+There is some amount of code today that could run in web workers in the near future. It's a scheduled goal for the applicaiton down the line. I don't have exact dates.
 
 ## l — How often are deliveries actually interrupted?
 
@@ -152,3 +192,39 @@ interruption rate exists to multiply. "Nobody has measured" is an acceptable ans
 becomes the report's declared assumption.
 
 → Resolution: feeds plan question 10's parking verdict
+Nobody has measured
+
+*Items m–n added 2026-08-23, from the failure-mode enumeration over the recommended design
+([register](../tracks/0160-flight-recorder/design-fmea-enumeration.md)).*
+
+## m — Content-Security-Policy, and how `index.html` is served
+
+Does the app ship a CSP, and does its `script-src` permit inline scripts (`'unsafe-inline'`)
+or a per-response nonce? Vite 8 emits a static `index.html`, so a nonce would have to be
+injected by whatever serves it.
+
+The report's boot-window compensation is a small inline pre-arm stub in the document head: it
+catches errors that fire before the app bundle loads and replays them into the recorder's nets
+at init. Under a restrictive CSP it silently never runs, and an empty replay queue at init is
+byte-identical to "no pre-boot errors occurred" — so a blocked stub is invisible, which is
+exactly the class of silent gap the design exists to prevent. This survey used the same CSP
+lens to disqualify fast-redact as a dependency (it compiles with the `Function` constructor),
+so the recorder's own prescribed script owes the same check. If inline is barred, the fallback
+is an external stub file loaded before the app bundle.
+
+→ Resolution: settles report question 7's pre-arm design; updates facts/app-profile.md
+
+## n — Outbound MQTT publish volume
+
+Roughly what share of the ~50 msg/s aggregate is outbound publishes rather than inbound
+messages? Order of magnitude is enough. The app profile records the aggregate rate with no
+inbound/outbound split.
+
+Report question 5 declines to pay for the outbound capture gap — successful outbound publishes
+appear on no production surface, and closing it needs a new 0060 emission via the
+pre-authorized policy-row route — partly on the assumption that outbound volume is small
+relative to inbound. If it is material, that verdict should be reopened before the emission
+route is dismissed, since an error report that cannot show what the app *sent* is missing half
+of any request/response story.
+
+→ Resolution: confirms or overturns report question 5's verdict
