@@ -1,7 +1,7 @@
 # 2026-08-22: 0160-flight-recorder — facts the survey needs (intake)
 
 **Status**: open
-**Owner**: app owner (a–g), plus whoever owns the report backend (c, h)
+**Owner**: app owner (a–g, i–l), plus whoever owns the report backend (c, h)
 
 Track [0160-flight-recorder](../tracks/0160-flight-recorder/research-plan.md) asks whether
 the app gets a memory-bounded per-bucket capture of recent events with triggered error
@@ -108,3 +108,47 @@ so this is Chromium-arm-only coverage.) Is adding such a header operationally fe
 is there an endpoint that could receive `application/reports+json` POSTs?
 
 → Resolution: decides plan question 7's crash-complement recommendation
+
+*Items i–l added 2026-08-23, from the failure-mode enumeration over the plan
+([register](../tracks/0160-flight-recorder/plan-fmea-enumeration.md)).*
+
+## i — Is a device identifier available to page code, and may it appear in reports?
+
+The bundle needs a device id, a page-incarnation id, and a bundle id (plan question 9) —
+without them, retried POSTs duplicate server-side, same-device bundles cannot be joined,
+and absence-based crash detection has nothing to key on. The MQTT clientId is
+device-scoped on a static roster (facts/app-profile.md) and is the obvious candidate: is
+it accessible to application code at runtime, and is it acceptable inside a report
+payload? If not, what device identity is available and permitted?
+
+→ Resolution: updates facts/app-profile.md; feeds plan questions 7, 9, 16
+
+## j — Tab usage patterns
+
+How many tabs of the app are typically open on a device — and is more than one ever
+legitimate, even transiently? Each tab runs an independent recorder (plan question 16), so
+the answer sizes the real per-device memory cost (N × envelope), decides whether cross-tab
+trigger coordination is worth designing, and connects to the single-connection enforcement
+question intake 2026-08-17-0150 item f already raised.
+
+→ Resolution: feeds plan question 16; may update facts/app-profile.md
+
+## k — Does any application code run in Web Workers?
+
+All four built-in taps and the `record()` interface are main-thread; worker-origin events
+would need a postMessage bridge nobody has designed. If the app is entirely main-thread
+today, the report declares that as a stated (and checkable) assumption instead of a silent
+one; if not, the interface needs a thread story.
+
+→ Resolution: settles plan question 6's thread dimension
+
+## l — How often are deliveries actually interrupted?
+
+Rough figures, order of magnitude: how often do tabs crash or get reloaded in normal
+fleet operation, and what do backend outages look like (frequency, typical duration)?
+Plan question 10 requires durable parking to prove "a real evidence win over the null" —
+the tab-crash-during-delivery window — and that proof is arithmetic only if an
+interruption rate exists to multiply. "Nobody has measured" is an acceptable answer and
+becomes the report's declared assumption.
+
+→ Resolution: feeds plan question 10's parking verdict

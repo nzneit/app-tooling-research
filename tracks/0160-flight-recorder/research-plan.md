@@ -34,7 +34,11 @@ own; it extends those seams where they are pre-authorized to extend, and owns no
    starvation. At the app's ~50 msg/s aggregate and few-KB payloads, tens of MB is minutes
    of full-rate history.
 4. **Delivery's null hypothesis is retry-within-session.** A bundle that cannot be delivered
-   is held in memory and retried with backoff until sent or the tab dies. Durable parking of
+   is held in memory and retried with backoff; a tab death loses it. The charter fixes only
+   that nothing durable holds a pending bundle by default — whether retries are bounded and
+   drop with a counter or run until the tab dies was never ruled and is question 10's choice
+   *(corrected 2026-08-23: an earlier draft of this plan asserted both variants in different
+   sections; the failure-mode enumeration caught the contradiction)*. Durable parking of
    pending bundles (IndexedDB) must *earn* its way in against the RAM-disk risk below —
    question 10 carries the burden of proof, and the user's stated concern is the reason.
 5. **Replay-on-another-device and regression-test generation are door-open only.** Their
@@ -141,6 +145,23 @@ redesign" is the sanctioned shape. And aborted REST requests raise no telemetry 
 ruling; the compensating "boundary stats counter" is ratified language with **no design
 anywhere** — this track is plausibly the trigger that finally designs it (question 5).
 
+## What the failure-mode enumeration changed (2026-08-23)
+
+After drafting, a D-0036-shape coverage-forcing enumeration ran over this plan on user
+directive — eight lanes, 152 failure modes, each mapped to the key question that owns it;
+[plan-fmea-enumeration.md](plan-fmea-enumeration.md) is the durable register, carrying the
+severity-ranked shortlist, the adjudication, and every finding preserved verbatim. Nine
+modes were unowned and two were defects in this plan's own text; the amendments are
+annotated in place, and the largest are: **question 16 is new** (the plan was silently
+single-tab); **question 9 gains bundle identity** (anonymous bundles were undedupable and
+uncorrelatable, and question 7's own absence-based compensation was unimplementable over
+them); **question 7's prescribed seal protocol was unsound** (index snapshots tear under
+continued capture — corrected to copy-or-freeze); and **the charter section and question
+10 disagreed about the retry null** (corrected: the charter fixes no-durable-parking;
+question 10 owns retry termination). Intake items i–l were added for the facts the pass
+surfaced. The same pass runs again at report stage, over the actual recommended design
+(question 15).
+
 ## Key questions
 
 1. **What does the recorder buy over the surfaces the program has already accepted — and
@@ -164,7 +185,18 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
    happens when a *single entry* exceeds its bucket's budget (truncate with markers per
    question 12's RD-5, or refuse); and drop accounting — every eviction and truncation must
    be countable in the bundle itself, because a capture that silently thinned is worse than
-   a capture that says so.
+   a capture that says so. Four additions from the enumeration pass (2026-08-23):
+   **truncation must force a copy** — a `slice()` of a large string is a V8
+   SlicedString/SpiderMonkey dependent string that retains the entire parent, so a 4 KB
+   truncated record can pin a 12 MB body for its ring lifetime while the meter reads
+   4 KB, and question 15's boundedness properties must test retention, not just the
+   meter; **if a global envelope binds, say which bucket pays** — cross-bucket
+   evict-oldest deterministically starves the quiet buckets (xstate, logs) whose sparse
+   entries are oldest, handing the noisy bucket's redundant traffic the space the rare
+   context needed; **projection failures are drops too** — an entry lost because the
+   scrubber threw is neither an eviction nor a truncation, and is counted or the
+   accounting lies; and the meter states what it does with **per-entry index/metadata
+   overhead**.
 3. **Is capture-time serialization the design, and what is the projection per bucket?** The
    leading hypothesis from the sweep: project every captured item to a bounded, serialized,
    immutable record inside the capture call, and let the ring hold only strings/bytes plus a
@@ -175,7 +207,21 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
    the off-the-shelf shape; @statelyai/inspect's replacer — HTMLElement→outerHTML,
    function→name — is MIT prior art worth copying), and per-bucket scrubbers, since xstate
    context and Zustand state can hold actor refs, functions, and cycles that
-   `JSON.stringify` throws on or drops silently.
+   `JSON.stringify` throws on or drops silently. The enumeration pass (2026-08-23) adds
+   four hazards the projection design must answer: **serializer-level loss carries
+   markers** — depth/breadth elision strings (`[Circular]`, "N more items") and JSON
+   coercions (Map/Set → `{}`, dropped `undefined`) are well-formed wrong evidence
+   indistinguishable from real values, the same anti-pattern RD-5 exists to prevent one
+   layer down, so elision and coercion get structured markers, not in-band strings;
+   **the serialize walk executes app code** — getters, Proxy traps, and `toJSON` run
+   inside the capture turn, can throw, stall, or mutate (a revoked immer draft throws
+   mid-walk; BigInt throws in plain `JSON.stringify`), so the projection guards against
+   the walk itself, not only value shapes; **a sibling listener may mutate the payload
+   before the recorder's listener runs** — dispatch order is not the recorder's to
+   choose; and **a named fallback** — if eager projection fails its cost test on
+   device-class hardware, what is plan B (capture-turn shallow snapshot plus idle-time
+   serialization is the obvious candidate), so the report does not discover the need
+   mid-design.
 4. **Where exactly does each built-in bucket attach, and at which layer's view of the
    traffic?** The concrete tap-map deliverable, grounded by the sweep:
    - **MQTT bucket**: wire-1 `actor.on('*')` sees *validated* payloads post-0010; the 0070
@@ -192,7 +238,11 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
      `AbortSignal`). The artifacts describe adapter *substitution*, not decoration — the
      decorator reading is inference the survey verifies. Aborts are invisible on telemetry
      by D-0018; if the recorder needs them, designing the ratified-but-undesigned stats
-     counter is the sanctioned route.
+     counter is the sanctioned route. And pair-at-completion capture structurally misses
+     the in-flight exchange — often the very hang being reported — while RD-4 requires an
+     in-flight entry to say so (added 2026-08-23): the record model needs a
+     request-record plus an outcome-record joined by a correlation id, reconciled with
+     question 3's immutable records and question 12's HAR projectability.
    - **xstate bucket**: `actor.system.inspect()` per root. Five event types are actually
      emitted at 5.32.5 (`@xstate.transition` is declared in the union and never emitted;
      `@xstate.action` is emitted and undocumented; the docs' four-type list and microstep
@@ -207,6 +257,17 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
      list. The bucket is optional and must not create a build-order dependency on 0050.
    - **Custom buckets**: the standard interface (question 6) is the attach point; the four
      built-ins above must be expressible *as* adapters over it, or the interface is wrong.
+   - **When taps attach, not only where** (added 2026-08-23): everything emitted before a
+     bucket attaches is never captured — including the connect-time replay burst a
+     `clean: false` session delivers immediately, and `xstate.init` — so boot-window
+     failures, a prime error class, get empty buckets indistinguishable from "nothing
+     happened". Worse, 0060's `inspect` is a constructor-only config slot, which puts
+     recorder construction *before* boundary construction while the HTTP wrap needs the
+     boundary first — an init-order cycle the design must break at the composition root.
+     The report states the attach-before-start ordering per bucket, stamps attached-since
+     markers so a bundle distinguishes quiet from not-yet-attached, and says how a tap's
+     silent death (boundary `dispose()` and recreation, facade reconfiguration) is
+     detected — tap liveness belongs in question 6's health block.
 5. **What do the capture gaps cost, and does the track pay to close them?** Outbound MQTT
    publishes (no production observation surface — needs a 0060 emission via the
    pre-authorized policy-row route) and aborted REST requests (D-0018). For each: is the
@@ -223,6 +284,17 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
    counters, current byte totals — the bundle's own health block), and whether `record()`
    is safe to call from anywhere or only below the view layer (the layering blueprint says
    services/machines, never components — align with D-0002's restricted-import discipline).
+   Three additions from the enumeration pass (2026-08-23): **unrepresentable cannot lean
+   on the type system here** — the app's strictness is very loose with heavy
+   agent-authored churn (facts/app-profile.md), so an `any`-typed config that compiles
+   with a missing capacity field is the expected case, and the recorder validates its own
+   config at runtime at startup, with a fail-fast-or-fail-safe ruling; **a kill switch**
+   — the charter injects config at startup, but a recorder that is itself degrading the
+   fleet needs disabling without a redeploy, and the report says whether that is a
+   runtime-config seam, a remote flag, or explicitly refused; and **the thread
+   dimension** — `record()` is main-thread as designed, worker-origin events would need a
+   bridge nobody has designed, and whether any app code runs in workers is intake item k
+   rather than an undeclared assumption.
 7. **What can each trigger actually see, and what is the trigger protocol?** Global nets
    catch what a page can observe; renderer OOM/unresponsive/app-manager kills fire no event,
    and on floor Firefox the Reporting API contributes nothing (no support before ~130/149),
@@ -230,32 +302,75 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
    Chromium-only `Reporting-Endpoints` server-side complement (a backend-header change, no
    client code) plus absence-based detection as the compensations. Protocol sub-questions:
    how nets chain with any existing handlers (intake item g); trigger dedup and cooldown —
-   an error loop must not produce a bundle storm; whether a trigger during an in-flight
-   bundle coalesces, queues, or drops; and what minimal synchronous work the net handler
-   does (snapshot the ring indices, then bundle async).
+   an error loop must not produce a bundle storm, and cooldown-suppressed triggers are
+   themselves counted; whether a trigger during an in-flight bundle coalesces, queues, or
+   drops; and what minimal synchronous work the net handler does. *(Corrected 2026-08-23:
+   this question previously prescribed "snapshot the ring indices, then bundle async" —
+   unsound, found independently by three enumeration lanes. A ring overwrites slots in
+   place, so under continued capture the async bundler reads post-trigger data at
+   pre-trigger positions, and no drop counter can see it because nothing was evicted. The
+   seal must copy or freeze the entry references — O(n) pointer copies of immutable
+   serialized records, cheap by construction — and stamp a per-bucket cut marker so
+   buckets sealed milliseconds apart are honest about their cut points.)* Four more
+   findings from the pass: **the nets arm late** — module-eval, config-wiring, and
+   first-mount errors fire before any net exists, so boot-loop failures produce no bundle
+   unless a pre-arm stub buffers them (Sentry's loader snippet is the prior art; a
+   question 14 comparison point); **React 18 error boundaries are not a passive net** —
+   React 18.3.1 has no root-level error hooks, and a boundary-caught error never reaches
+   `window.onerror` in production (dev behaviour differs, hiding the gap from tests), so
+   this charter-named net is really a recorder-supplied boundary component or
+   per-boundary wiring — enumerated app work, not an armed hook; **cross-origin scripts
+   yield opaque `"Script error."`** events with no stack, so the nets' yield depends on
+   script origins; and **absence-based detection needs a designer** — the report names
+   who builds the server-side heartbeat-gap check it leans on, which presupposes question
+   9's bundle identity.
 8. **Does capture continue past the trigger?** The charter wants "possibly slightly after"
    — a configurable post-trigger window (T ms or N items per bucket) before the bundle
    seals, so the report includes the immediate aftermath. Sub-questions: what a second
    trigger during the window does; whether the window delays delivery or the bundle ships
-   and a supplement follows; the default (plausibly zero).
+   and a supplement follows — a supplement carries its base bundle's id (question 9) and
+   needs a delivery slot question 10's one-at-a-time rule must grant; the default
+   (plausibly zero).
 9. **What is the bundle, and what are the two budgets?** The envelope header: trigger
    reason and stack (tracekit/error-stack-parser prior art), app build/version, config
    snapshot, per-bucket drop/truncation counters, 0070's six `IngressStats` counters and
-   wire-2 depths, both clocks (question 12's RD-2), schema version. The body: per-bucket
-   ordered records. Format sub-questions: JSON with worker-side `CompressionStream` gzip
+   wire-2 depths, both clocks (question 12's RD-2), schema version — **and identity**
+   (added 2026-08-23): a device id, a page-incarnation id, and a bundle id, with
+   supplements naming their base. Without these, at-least-once retry duplicates are
+   undedupable at the backend (a POST that lands but loses its 2xx is re-sent and stored
+   twice), same-device bundles cannot be told apart or joined across tabs and reloads,
+   and question 7's absence-based detection has nothing to key on; whether a device
+   identifier is available to page code and may appear in reports is intake item i. The
+   body: per-bucket ordered records. Format sub-questions: JSON with worker-side `CompressionStream` gzip
    (5–10× planning ratio; 15× measured on synthetic repetitive JSON is the upper bound),
    size ceilings the backend will accept (intake item c), and the **two-budget split** the
    platform findings force — the triggered bundle has no hard size problem, while any
    last-gasp path is ≤ 64 KiB, sendBeacon-only on floor Firefox, pre-serialized,
    uncompressed. Whether a last-gasp summary exists at all is decided here: the charter's
    triggers do not include page dismissal, but a bundle already in flight when the tab dies
-   is a delivery question, not a new trigger.
+   is a delivery question, not a new trigger. Two more sub-questions from the pass
+   (2026-08-23): **peak memory at seal** — the rings, the assembled JSON string, and the
+   worker's structured-clone copy are transiently co-resident at 2–3× the envelope (up to
+   ~150 MB at the 50 MB end), at the moment the device is likeliest already degraded, and
+   a renderer OOM here destroys the evidence and lands in question 7's no-report death
+   class — the design budgets the spike (transferable `ArrayBuffer` output instead of
+   string cloning is the obvious lever) rather than discovering it; and **the compression
+   failure path** — a gzip worker that dies degrades to uncompressed or smaller, never to
+   silent loss.
 10. **Delivery: what carries the bundle, and does anything survive the tab?** The null is
-    fixed by charter: in-memory retry with backoff and jitter (0050's copied
-    loglevel-plugin-remote design is the house idiom), one bundle at a time, bounded
-    retries, then drop with a counter. Durable parking must prove: hard cap (a bundle or
+    fixed by charter only in shape: in-memory retry with backoff and jitter (0050's copied
+    loglevel-plugin-remote design is the house idiom), one bundle at a time, nothing
+    durable by default. **This question owns retry termination** (clarified 2026-08-23
+    after the enumeration caught the contradiction): bounded-then-drop-with-a-counter and
+    retry-until-tab-death are materially different under a sustained outage — freed memory
+    and lost evidence, versus pinned memory and a late win — and the charter ruled
+    neither. It also owns the **delivery semantics**: retries are at-least-once, so the
+    backend deduplicates on question 9's bundle id, and the report says so to whoever
+    owns the endpoint. Durable parking must prove: hard cap (a bundle or
     two, evict-oldest, self-deleting on send), a real evidence win over the null (the
-    tab-crash-during-delivery window), and no accumulation path under a dead backend —
+    tab-crash-during-delivery window — quantified against how often deliveries are
+    actually interrupted, intake item l; without that figure the proof is judgment
+    wearing a proof's clothes), and no accumulation path under a dead backend —
     against the RAM-disk premise above. Also owned here: **delivery independence** — the
     report must not assume 0060's REST surface is alive, because the failure being reported
     may be the boundary itself; a recorder POST is plausibly a bare `fetch` outside the
@@ -269,7 +384,16 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
     capture the recorder's own report POST (self-capture loop); the global nets must not
     re-trigger on the recorder's own throw (loop protection; wire-1 listener isolation I12
     covers the boundary side but `onerror` sees everything); and the recorder must never
-    report through itself. The failure bias is stated like 0150's question 13: a recorder
+    report through itself. The enumeration pass (2026-08-23) extends the list: **every
+    in-path tap needs its own isolation contract** — I12 covers wire-1 listeners only,
+    while the mutator/`FetchLike` wrap sits inside the app's request path (a capture
+    throw fails the app's request itself), the 0070 `inspect` hook is a bare synchronous
+    call inside the pipeline turn, and xstate observers run synchronously in actor
+    processing with no documented throw isolation — question 15 verifies containment per
+    tap, not once; and **the seal itself is a hazard** — question 9's trigger-time memory
+    spike lands exactly when the device is likeliest degraded, so "do not become the
+    incident" covers the collection step, not only steady-state capture. The failure bias
+    is stated like 0150's question 13: a recorder
     that silently under-captures is acceptable; one that degrades the app is not.
 12. **Which data-model decisions are reserved for replay and regression tests, and which
     are explicitly not?** The door-open ruling's whole claim on the design, distilled from
@@ -288,8 +412,12 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
       sentinels are the anti-pattern; a truncated capture without a flag replays as a wrong
       response rather than a refused one);
     - **RD-6** per-payload `{mimeType, encoding}` in-band (binary payloads die without it);
-    - **RD-7** an envelope header with format version, creator, app build, platform, and
-      config snapshot (HAR `log.version/creator`; Playwright context options; rrweb Meta);
+    - **RD-7** an envelope header with format version, creator, app build, platform,
+      config snapshot, **and instance identity — device id, page-incarnation id, bundle
+      id** (added 2026-08-23: without them same-device bundles cannot be joined,
+      deduplicated, or ordered across tabs and reloads — exactly the
+      cheap-now/unrecoverable-later class this list exists for) (HAR
+      `log.version/creator`; Playwright context options; rrweb Meta);
     - **RD-8** per-bucket `{schemaId, schemaVersion}` for app-defined buckets;
     - **RD-9** ring self-sufficiency — each bucket can say whether its oldest retained item
       is a complete starting point, and stamps how many items dropped before the window
@@ -320,7 +448,11 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
     style field/path/pattern rules), not the choke point; apply per-bucket at projection
     time (capture-time redaction is irreversible — RD-10 marks it); and get the actual
     constraints from intake item b, because what may leave the device at all is a fact only
-    the team can supply.
+    the team can supply. And redaction covers the **whole bundle**, not only bucket
+    records (added 2026-08-23): the trigger's error message and stack are free-text PII
+    carriers, the config snapshot can embed secrets, and quarantine ride-along is by
+    definition traffic no schema accepted — all three bypass every bucket's projection
+    scrubber unless the seal applies the rules to them explicitly.
 14. **Adopt, wrap, build — what would an adopted core be paid for?** The equal-merit
     comparison, honestly run. **Sentry's SDK core** (MIT, active): a real breadcrumb ring,
     the failure nets, attachments for arbitrary buckets, delivery to an owned endpoint via
@@ -350,6 +482,32 @@ anywhere** — this track is plausibly the trigger that finally designs it (ques
     and, per the 0150 precedent, states plainly which of its claims are unverified if no
     lane can reach them. Byte-accounting invariants (never exceeds cap; drop counters
     account for every eviction) are property-testable with the accepted fast-check lane.
+    Four obligations added by the enumeration pass (2026-08-23): measure projection
+    against **live app-shaped objects** (getter walks, proxies), not inert literals — the
+    current figures measure the wrong operand; verify **throw containment per tap**
+    (mutator wrap, 0070 `inspect`, xstate observer), not only wire-1's I12; test
+    boundedness as **retention**, not metered bytes (the SlicedString hazard in question
+    2); and the report carries one standing obligation — **re-run this enumeration over
+    the recommended design**: the D-0036 coverage-forcing pass that produced this plan's
+    2026-08-23 amendments runs again when there is an actual design to enumerate, and its
+    register lands beside the report.
+16. **Multi-tab: which tab owns the evidence?** (Added 2026-08-23 — the enumeration pass
+    found the plan silently single-tab.) Each tab runs an independent in-RAM recorder,
+    and the app profile is explicit that single-connection-per-device is "stated as
+    intent, not as an enforced property" — so with two tabs open, at most one holds the
+    MQTT connection, and a trigger in the connectionless tab seals an MQTT bucket that is
+    empty in a way indistinguishable from "no traffic", while a trigger in the connected
+    tab misses the erroring tab's xstate/HTTP/log history. N tabs also multiply the
+    envelope (N × 10–50 MB of device RAM) and arm N independent failure nets, so one
+    device-level cause produces N near-duplicate bundles whose per-instance cooldowns
+    cannot see each other. The report answers: what a bundle records about its own tab
+    context (question 9's page-incarnation id is the prerequisite); whether cross-tab
+    trigger coordination (BroadcastChannel is the light primitive; 0150's plan owns the
+    Web Locks leader-election analysis) is in scope or explicitly refused with the
+    duplicate cost stated; and what the design assumes about tab usage at all — intake
+    item j, connecting to the single-connection enforcement question intake
+    2026-08-17-0150 item f already raised. What it must not do is silently assume one
+    tab.
 
 ## Seams this track cites rather than restates
 
