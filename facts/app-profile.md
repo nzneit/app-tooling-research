@@ -285,6 +285,30 @@ Node version, package manager, the whole Contracts section, test framework, and 
 - Scanning preference: an **offline vulnerability database fed by a periodic sync** is the
   preferred operating model, though outbound access is believed available (2026-08-14, user).
 - Browser targets: Firefox version ~124 , Chromium latest - (latest - 2)
+  - The Firefox floor is unusually consequential for track 0160: `fetch keepalive` shipped
+    in Firefox 133 (2024-11-26), so at ≤ 132 the only page-dismissal-surviving sender is
+    `sendBeacon` (≤ 64 KiB shared in-flight quota), and floor-era Firefox predates all
+    Reporting API support. The fleet's *actual* Firefox version is intake
+    2026-08-22-0160 item f.
+- **Device runtime: the OS runs from a RAM disk** (2026-08-22, user — surfaced while
+  chartering 0160). Three consequences carried into every persistence recommendation.
+  (1) The browser profile — IndexedDB included — is RAM, so "spill to disk" spends the same
+  physical budget as an in-memory buffer; persistence changes which process holds the bytes
+  and what survives a tab crash, never the footprint. (2) Durability across a device power
+  cycle does not exist on-device at all; anything that must survive a power cycle must
+  leave the device first. (3) A durable queue that accumulates while a backend is down
+  competes with the OS for RAM, and a full RAM disk is an OS-level failure — bounded-by-
+  construction is a safety property here, not a style preference. Note this does not
+  change 0150's premise (its durable inbox targets tab-crash/reload atomicity, which RAM
+  backing preserves), but it does mean 0150's guarantee also ends at a power cycle.
+- **Flight-recorder capture envelope: 10–50 MB** (2026-08-22, user) — the rough memory
+  envelope for 0160's in-RAM capture buffers across all buckets. An envelope, not a hard
+  budget; byte-accounting and per-bucket apportionment are 0160 design questions.
+- **An error-report HTTP endpoint exists; its payload schema is ours to define**
+  (2026-08-22, user). 0160's recommendation authors the schema as a vendored OpenAPI
+  contract so the 0010 pipeline generates its types and validators. Endpoint particulars
+  (origin, size ceiling, auth, infrastructure independence from the broker/REST backend)
+  are intake 2026-08-22-0160 item c.
 - Test framework: **vitest 4.1.9** (2026-08-14, user) — retires an assumption standing since
   Wave 2
 - Approximate app scale (LOC or file count): 150,000 lOC
