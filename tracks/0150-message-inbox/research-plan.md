@@ -928,8 +928,16 @@ reopens D-0015, if anyone does.
 
 The **outbound half** — durably queuing messages this client publishes — is out of scope. But
 both halves land in one origin's IndexedDB, at one schema version, under one eviction, quota,
-multi-tab, and worker decision. The report therefore **reserves** that space and makes those
-shared calls once; otherwise the deferral becomes a rewrite. Also out of scope: reopening the
+multi-tab, worker, and **memory-budget** decision. The report therefore **reserves** that space
+and makes those shared calls once; otherwise the deferral becomes a rewrite.
+
+The memory budget is this track's own to state and bound (**D-0043**: each track owns its
+footprint and models no sibling's). It is a real number this report owes, not a browser concern
+it can defer to quota — on a RAM-disk device IndexedDB *is* RAM, so the store, its dedup keys,
+and its in-flight transactions are charged against the same physical budget as the OS and every
+other service. State it per device, bound it by construction the way 0160 bounds its envelope,
+and say what happens at the bound. Nothing in the repo adds this track's number to a sibling's,
+which D-0043 records as a deliberate residual rather than an oversight. Also out of scope: reopening the
 quarantine ring's no-replay rule for inbound contract violations (0060 KQ4), except to note
 whether a durable store changes its cost; and the broker-side question of whether persistent
 sessions should be used at all, which is an operations call, not a front-end one.
