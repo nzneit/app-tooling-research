@@ -255,6 +255,18 @@ as document-state rather than track-state are three different answers with diffe
 this is exactly the kind of change the report's N=0 finding applies to — the research-plan
 template has **zero remaining authorings** ahead of it, so changing it propagates into nothing.
 
+> **2026-08-23 update (in place; the paragraph above is left intact as the record).** The counts
+> and the N=0 premise are both stale, and the second one is the interesting half. There are now
+> **sixteen** `tracks/*/research-plan.md` files, all still saying `draft`, against **nine**
+> accepted tracks. Two of the sixteen — 0150 and 0160 — were authored *after* D-0037 recorded
+> "zero remaining authorings" on 2026-08-17, the first of them within days. So the arithmetic that
+> declined this repair was falsified almost immediately, nothing noticed, and both new plans
+> inherited the dead field. Found by the machinery lens of 0160's acceptance gate; D-0037 carries
+> the same note. The repair is back on the table on its merits, and the transferable lesson is
+> narrower than "recheck decisions": **a decision declined on a count needs the count's expiry
+> date recorded beside it**, because a premise like "nothing more will be authored" is falsified by
+> the program simply continuing.
+
 ## What already works
 
 The completeness critic caught a disposition-driving unverified assumption in 0090 and got

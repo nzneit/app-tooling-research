@@ -25,6 +25,18 @@
 > - **item h** was answered with browser composition (Firefox today, possibly Chromium later)
 >   rather than the operational feasibility it asked about. Inert today either way, since
 >   Firefox emits no crash reports at any version.
+>
+> **Seven, on a re-read at 0160's acceptance gate (2026-08-23).** A clause-by-clause pass over
+> this file at the gate found one more, which the first pass missed because it is not a
+> not-quite-answer but a *truncated* one:
+>
+> - **item j**'s answer stops mid-clause — "They have distinct views and distinct" — so what
+>   else distinguishes the two tabs is unread. The candidates that would complete it (distinct
+>   sessions, logins, or clientIds) bear on the single-connection invariant and on 0160's RD-7
+>   identity, so the report carries the unread half as a declared assumption and reads only the
+>   half that was written. **The lesson is D-0042's own**: the answering check must test the
+>   answer text for completeness, not only the question's clauses for coverage — a sentence
+>   that simply stops reads as an answer.
 
 Track [0160-flight-recorder](../tracks/0160-flight-recorder/research-plan.md) asks whether
 the app gets a memory-bounded per-bucket capture of recent events with triggered error
@@ -144,10 +156,14 @@ so this is Chromium-arm-only coverage.) Is adding such a header operationally fe
 is there an endpoint that could receive `application/reports+json` POSTs?
 
 → Resolution: decides plan question 7's crash-complement recommendation
+It's all firefox today, but maybe someday down the line it could be chromium.
+
+<!-- The answer line above was filed below the i–l divider until 2026-08-23, where 0160's
+     acceptance gate found item h reading as unanswered in place while its answer floated
+     orphaned in the next section's preamble. Moved, not changed. -->
 
 *Items i–l added 2026-08-23, from the failure-mode enumeration over the plan
 ([register](../tracks/0160-flight-recorder/plan-fmea-enumeration.md)).*
-It's all firefox today, but maybe someday down the line it could be chromium.
 
 ## i — Is a device identifier available to page code, and may it appear in reports?
 

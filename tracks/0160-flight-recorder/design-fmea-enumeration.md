@@ -7,6 +7,18 @@ and its register is [plan-fmea-enumeration.md](plan-fmea-enumeration.md). The ob
 the recommended design in [report.md](report.md) — the capture interface of Key question 6
 with its invariants I1–I10, and every ruling in Key questions 1–16.
 
+> **Read the `report.md:NNN` citations below as historical.** This register cites the report by
+> line number about 199 times, and it was written against the report as it stood at commit
+> `08d5bbe` — *before* the revision against intake items a–l and before the acceptance-gate
+> corrections. The report has since grown by hundreds of lines, so most of those line numbers now
+> land somewhere else, and a few point at text that was changed *because of the finding citing it*.
+> The register is preserved verbatim, which is the point of a register; this note is the repair.
+> Follow the quoted text and the `Q<n>`/`I<n>` labels, not the line numbers. (Added 2026-08-23 by
+> the acceptance gate, which measured 34 of the 40 mechanically checkable `Q<n> … report.md:NNN`
+> cites landing outside the question they name. A validator check for this was measured against the
+> whole corpus and scored zero true hits, so it is a **do-not-build** under D-0037 and this
+> convention is the substitute.)
+
 ## Method, and what it deliberately is not
 
 Per **D-0036** this is the FMEA *enumeration* without the scoring apparatus: qualitative

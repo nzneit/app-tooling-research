@@ -322,8 +322,10 @@ Node version, package manager, the whole Contracts section, test framework, and 
   config seeds, and the arithmetic they imply is worth carrying — in two parts, because the
   payload sizes above cover MQTT only. The **computable** term: 100 MQTT messages costs
   **1 MB typically and 5 MB at the worst-case payload size**. The other three buckets have no
-  measured record size, so sizing them by analogy adds roughly 1.5 MB, for ~2.5 MB typical and
-  ~6.5 MB worst — an estimate, not a fact. Either way memory is not the binding constraint at
+  measured record size, so sizing them by analogy adds roughly 0.95 MB, for ~2 MB typical and
+  ~6 MB worst — an estimate, not a fact (50 HTTP records × 10 KB + 100 transitions × 4 KB +
+  50 log lines × 1 KB = 950 KB; the counting rule is printed because an earlier figure of
+  1.5 MB did not reproduce and was corrected at 0160's acceptance gate, 2026-08-23). Either way memory is not the binding constraint at
   these depths; **history duration is**: 100 MQTT messages is about **two seconds** at the
   ~50 msg/s peak rate. Which xstate machines matter most, whether machine definitions carry
   `version`, and REST response-body sizes were not answered and remain assumptions.
@@ -347,8 +349,17 @@ Node version, package manager, the whole Contracts section, test framework, and 
   absence-based crash detection has a key. The item also asked whether that id **may appear
   inside a report leaving the device**, and that half went unanswered — the same class of
   question item b left unruled, so it stays a declared assumption rather than a settled fact.
+- **Delivery-interruption rate: not measured** (2026-08-23, user — intake 2026-08-22-0160
+  item l). Nobody has figures for how often tabs crash or reload in normal fleet operation, or
+  for backend outage frequency and duration. This was a pre-declared acceptable non-answer and
+  it converts a hidden assumption into a stated one: 0160's durable-parking refusal and its
+  retry horizon are judgments defaulting safe rather than arithmetic, and 0150's delivery and
+  recovery design inherits the same gap. Added to this file at 0160's acceptance gate, where
+  the report was found to claim every answer had landed here.
 - **Two tabs at most, with distinct views** (2026-08-23, user — intake 2026-08-22-0160
-  item j). So multi-tab is a live condition, not a hypothetical: per-device recorder memory is
+  item j). **The answer is truncated mid-clause** ("They have distinct views and distinct ___"),
+  so what else distinguishes the two tabs — sessions, logins, clientIds — is unread and must not
+  be inferred; it bears on the single-connection invariant and on 0160's RD-7 identity. So multi-tab is a live condition, not a hypothetical: per-device recorder memory is
   2× the envelope, two independent failure nets can report one device-level cause twice, and —
   because at most one tab holds the MQTT connection — the connectionless tab's empty MQTT
   bucket must be distinguishable from a quiet one. It also gives intake 2026-08-17-0150 item f
