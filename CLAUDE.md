@@ -30,7 +30,11 @@ fails on Node 24.x.
   validator enforces contiguity.
 - **Commits stay local.** The user owns pushes to the remote.
 - **Questions only the user can answer go to `intake/`**, as a dated file — not into a report
-  as a silent assumption, and not left in conversation.
+  as a silent assumption, and not left in conversation. Follow
+  [`intake/_TEMPLATE.md`](intake/_TEMPLATE.md) (D-0042): one answerable question per item; fact
+  items declare the assumption made without them, ruling items carry options and a
+  recommendation. When answers land, check each item clause by clause — an under-answered item
+  that reads as closed is what the convention exists to prevent.
 
 ## Conventions worth invoking
 
